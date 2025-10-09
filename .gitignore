@@ -1,0 +1,35 @@
+# SQLite database files
+*.db
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment folders
+venv/
+env/
+.venv/
+
+# Excel, CSV, and output files
+*.xlsx
+*.xls
+*.csv
+*.log
+
+# Temporary or generated files
+TEMP FOLDER/
+FilesSanitized/
+R1_results_from_COAP/
+*.tmp
+*.bak
+
+# System files
+.DS_Store
+Thumbs.db
+
+# IDE settings
+.vscode/
+.idea/
+*.code-workspace
