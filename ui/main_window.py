@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QTabWidget, QPushButton, QFileDialog, QLabel, QTableWidget, QTableWidgetItem, QScrollArea, QGroupBox, QPushButton, QToolBox, QHBoxLayout
 )
+from ui.rounds_manager import run_round_1, download_offers
 import pandas as pd
 from database import db_manager  # your module with get_connection()
 
@@ -17,35 +18,23 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
 
-        # Create tabs
+        # Initialization tab
         self.init_tab = QWidget()
-        # self.seat_matrix_tab = QWidget()
-        # self.rounds_tab = QWidget()
-
-        # self.tabs.addTab(self.init_tab, "Initialization")
-        # self.tabs.addTab(self.seat_matrix_tab, "Seat Matrix")
-        # self.tabs.addTab(self.rounds_tab, "Rounds")
-
-        # # Setup Initialization tab
-        # self.setup_init_tab()
-        # self.seat_matrix_tab = SeatMatrixTab()
-        # self.tabs.addTab(self.seat_matrix_tab, "Seat Matrix")
-        # #self.setup_rounds_tab()       # Add this line
-        self.rounds_tab = QWidget()
-
-        self.tabs.addTab(self.init_tab, "Initialization")
-        self.tabs.addTab(QWidget(), "Seat Matrix")  # placeholder will be replaced below
-        self.tabs.addTab(self.rounds_tab, "Rounds")
-
         self.setup_init_tab()
+        self.tabs.addTab(self.init_tab, "Initialization")
+
+        # Seat matrix placeholder
+        self.tabs.addTab(QWidget(), "Seat Matrix")
+
+        # Rounds tab (your custom widget)
+        self.rounds_tab = RoundsWidget()
+        self.tabs.addTab(self.rounds_tab, "Rounds")
 
         # Properly initialize seat matrix
         self.seat_matrix_tab = SeatMatrixTab()
-        self.tabs.removeTab(1)  # remove placeholder
+        self.tabs.removeTab(1)
         self.tabs.insertTab(1, self.seat_matrix_tab, "Seat Matrix")
-
-        # Now setup rounds tab
-        self.setup_rounds_tab()
+        
     def setup_init_tab(self):
         layout = QVBoxLayout()
         self.init_tab.setLayout(layout)
@@ -147,7 +136,7 @@ class MainWindow(QMainWindow):
         # Status label
         self.round_status_label = QLabel("")
         layout.addWidget(self.round_status_label)
-
+        
         # Table to show round offers
         self.round_table = QTableWidget()
         layout.addWidget(self.round_table)
@@ -201,20 +190,20 @@ class SeatMatrixTab(QWidget):
                     table.setItem(i, j, val)
 
             # 🔁 Auto-update seats_allocated when set_seats edited
-            table.itemChanged.connect(self.handle_item_changed)
+            # table.itemChanged.connect(self.handle_item_changed)
 
             self.toolbox.addItem(table, section)
             self.tables[section] = table
 
-    def handle_item_changed(self, item):
-        """Automatically update 'Seats Allocated' when 'Set Seats' changes."""
-        if item.column() == 0:  # Set Seats column
-            try:
-                new_value = int(item.text())
-                table = item.tableWidget()
-                table.item(item.row(), 1).setText(str(new_value))  # copy to Seats Allocated
-            except ValueError:
-                pass  # ignore invalid (non-integer) entries
+    # def handle_item_changed(self, item):
+    #     """Automatically update 'Seats Allocated' when 'Set Seats' changes."""
+    #     if item.column() == 0:  # Set Seats column
+    #         try:
+    #             new_value = int(item.text())
+    #             table = item.tableWidget()
+    #             table.item(item.row(), 1).setText(str(new_value))  # copy to Seats Allocated
+    #         except ValueError:
+    #             pass  # ignore invalid (non-integer) entries
 
     def load_matrix(self):
         """Load data from seat_matrix table into GUI."""
@@ -257,3 +246,20 @@ class SeatMatrixTab(QWidget):
         msg.setWindowTitle("Saved Successfully")
         msg.setText("✅ Seat Matrix data has been saved to the database successfully!")
         msg.exec()
+        
+class RoundsWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout()
+
+        layout.addWidget(QLabel("Round 1 Allocation"))
+
+        self.round1_btn = QPushButton("Run Round 1 Allocation")
+        self.round1_btn.clicked.connect(run_round_1)
+        layout.addWidget(self.round1_btn)
+
+        self.download_btn = QPushButton("Download Round 1 Offers")
+        self.download_btn.clicked.connect(lambda: download_offers(1))
+        layout.addWidget(self.download_btn)
+
+        self.setLayout(layout)
