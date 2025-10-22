@@ -1,19 +1,25 @@
 # main_window.py
+import sqlite3
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QTabWidget, QPushButton, QFileDialog, QLabel, QTableWidget, QTableWidgetItem, QScrollArea, QGroupBox, QPushButton, QToolBox, QHBoxLayout
+    QApplication, QMainWindow, QWidget, QVBoxLayout,QMessageBox, 
+    QTabWidget, QPushButton, QFileDialog, QLabel,QComboBox, QTableWidget, QTableWidgetItem, QScrollArea, QGroupBox, QPushButton, QToolBox, QHBoxLayout
 )
+from ui.update_dialog import UpdateDialog
 from ui.rounds_manager import run_round_1, download_offers
 import pandas as pd
 from database import db_manager  # your module with get_connection()
+from ui.round_upload_widget import RoundUploadWidget
+from ui.search_page import SearchPage
+
+DB_NAME = "mtech_offers.db"
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("MTech Offers Automation")
         self.resize(900, 600)
-
+        self.total_rounds = 10  
         # Create tab widget
         self.tabs = QTabWidget()
         self.setCentralWidget(self.tabs)
@@ -27,8 +33,12 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(QWidget(), "Seat Matrix")
 
         # Rounds tab (your custom widget)
-        self.rounds_tab = RoundsWidget()
+        self.rounds_tab = RoundsWidget(total_rounds=self.total_rounds)
         self.tabs.addTab(self.rounds_tab, "Rounds")
+        
+        self.search_tab = SearchPage(db_path="mtech_offers.db")
+        self.search_tab.updateRequested.connect(self.open_update_page)  # define this slot to show the next page
+        self.tabs.addTab(self.search_tab, "Search")
 
         # Properly initialize seat matrix
         self.seat_matrix_tab = SeatMatrixTab()
@@ -47,6 +57,28 @@ class MainWindow(QMainWindow):
         # Status label
         self.status_label = QLabel("")
         layout.addWidget(self.status_label)
+        
+    def open_update_page(self, record: dict):
+    # lazy import to avoid circulars
+        coap = record.get("coap_id")
+        if not coap:
+            QMessageBox.warning(self, "Missing COAP", "Could not read COAP from the selected row.")
+            return
+
+        dlg = UpdateDialog(DB_NAME, coap, self)
+        dlg.exec()
+        
+    # def open_update_page(self, record: dict):
+    #     """
+    #     record: dict containing the row clicked in SearchPage
+    #     You can show a QMessageBox, populate a new tab, or open a new window
+    #     """
+    #     # Example: just show the record for now
+    #     from PySide6.QtWidgets import QMessageBox
+    #     msg = QMessageBox()
+    #     msg.setWindowTitle("Update Requested")
+    #     msg.setText(f"UPDATE requested for:\n{record}")
+    #     msg.exec()
 
     def upload_excel(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -247,19 +279,149 @@ class SeatMatrixTab(QWidget):
         msg.setText("✅ Seat Matrix data has been saved to the database successfully!")
         msg.exec()
         
+# class RoundsWidget(QWidget):
+#     def __init__(self,total_rounds=10):
+#         super().__init__()
+#         self.total_rounds = total_rounds
+#         layout = QVBoxLayout()
+#         self.round_upload_widget = RoundUploadWidget(max_rounds=self.total_rounds)
+#         layout.addWidget(self.round_upload_widget)
+
+#         layout.addWidget(QLabel("Round 1 Allocation"))
+
+#         self.round1_btn = QPushButton("Run Round 1 Allocation")
+#         self.round1_btn.clicked.connect(run_round_1)
+#         layout.addWidget(self.round1_btn)
+
+#         self.download_btn = QPushButton("Download Round 1 Offers")
+#         self.download_btn.clicked.connect(lambda: download_offers(1))
+#         layout.addWidget(self.download_btn)
+
+#         self.setLayout(layout)
 class RoundsWidget(QWidget):
-    def __init__(self):
+    def __init__(self, total_rounds=10):
         super().__init__()
-        layout = QVBoxLayout()
+        self.total_rounds = total_rounds
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
 
-        layout.addWidget(QLabel("Round 1 Allocation"))
+        # ------------------ Round Selection ------------------
+        round_layout = QHBoxLayout()
+        round_layout.addWidget(QLabel("Select Round:"))
+        self.round_combo = QComboBox()
+        round_layout.addWidget(self.round_combo)
+        self.refresh_rounds()
+        self.layout.addLayout(round_layout)
 
-        self.round1_btn = QPushButton("Run Round 1 Allocation")
-        self.round1_btn.clicked.connect(run_round_1)
-        layout.addWidget(self.round1_btn)
+        # ------------------ File Upload Widgets ------------------
+        # File 1: IIT Goa Offered Candidate Decision File
+        required_map_1 = [
+            ("Mtech_App_no", "Mtech Application No"),
+            ("Applicant_Decision", "Applicant Decision")
+        ]
+        table_name_fn_1 = lambda round_no: f"iit_goa_offers_round{round_no}"
+        self.upload1 = RoundUploadWidget(
+            title="IIT Goa Offered Candidate Decision File",
+            required_map=required_map_1,
+            table_name_fn=table_name_fn_1
+        )
+        self.layout.addWidget(self.upload1)
 
-        self.download_btn = QPushButton("Download Round 1 Offers")
-        self.download_btn.clicked.connect(lambda: download_offers(1))
-        layout.addWidget(self.download_btn)
+        # File 2: IIT Goa Offered But Accepted at Different Institute File
+        required_map_2 = [
+            ("Mtech_App_no", "Mtech Application No"),
+            ("Other_Institute_Decision", "Other Institute Decision")
+        ]
+        table_name_fn_2 = lambda round_no: f"accepted_other_institute_round{round_no}"
+        self.upload2 = RoundUploadWidget(
+            title="IIT Goa Offered But Accepted at Different Institute File",
+            required_map=required_map_2,
+            table_name_fn=table_name_fn_2
+        )
+        self.layout.addWidget(self.upload2)
 
-        self.setLayout(layout)
+        # File 3: Consolidated Decision File
+        required_map_3 = [
+            ("COAP_Reg_ID", "COAP Reg ID"),
+            ("Applicant_Decision", "Applicant Decision")
+        ]
+        table_name_fn_3 = lambda round_no: f"consolidated_decisions_round{round_no}"
+        self.upload3 = RoundUploadWidget(
+            title="Consolidated Decision File",
+            required_map=required_map_3,
+            table_name_fn=table_name_fn_3
+        )
+        self.layout.addWidget(self.upload3)
+
+        # ------------------ Action Buttons ------------------
+        btn_layout = QHBoxLayout()
+        # Run Round 1 Allocation (can replace with dynamic round logic later)
+        self.round_btn = QPushButton("Run Round Allocation")
+        self.round_btn.clicked.connect(self.run_round)
+        btn_layout.addWidget(self.round_btn)
+
+        # Download offers button
+        self.download_btn = QPushButton("Download Offers")
+        self.download_btn.clicked.connect(self.download_current_round_offers)
+        btn_layout.addWidget(self.download_btn)
+
+        # Reset files & DB button
+        self.reset_btn = QPushButton("Reset Uploaded Files")
+        self.reset_btn.clicked.connect(self.reset_round)
+        btn_layout.addWidget(self.reset_btn)
+
+        self.layout.addLayout(btn_layout)
+
+    # ------------------ Functions ------------------
+    def get_current_round(self):
+        """Return selected round as int"""
+        return int(self.round_combo.currentText())
+
+    def refresh_rounds(self):
+        """Populate dropdown based on already generated rounds"""
+        self.round_combo.clear()
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        # Check max round in offers table
+        # cursor.execute("SELECT MAX(round_no) FROM offers")
+        # max_round = cursor.fetchone()[0]
+        # conn.close()
+        # Check if offers table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='offers'")
+        if cursor.fetchone() is None:
+            max_round = 0  # no offers generated yet
+        else:
+            cursor.execute("SELECT MAX(round_no) FROM offers")
+            max_round = cursor.fetchone()[0] or 0
+
+        conn.close()
+        start_round = 1
+        end_round = (max_round + 1) if max_round else 1
+        end_round = min(end_round, self.total_rounds)
+        for r in range(start_round, end_round + 1):
+            self.round_combo.addItem(str(r))
+
+    def run_round(self):
+        """Placeholder: call your round allocation logic"""
+        round_no = self.get_current_round()
+        # Here you would implement Round 2, Round 3, etc. allocation logic
+        run_round_1() if round_no == 1 else QMessageBox.information(self, "Info", f"Run round {round_no} logic here")
+        # Refresh dropdown after allocation
+        self.refresh_rounds()
+
+    def download_current_round_offers(self):
+        round_no = self.get_current_round()
+        download_offers(round_no)
+
+    def reset_round(self):
+        """Delete uploaded files from DB and reset widgets"""
+        round_no = self.get_current_round()
+        for upload in [self.upload1, self.upload2, self.upload3]:
+            table_name = upload.table_name_fn(round_no)
+            conn = sqlite3.connect(DB_NAME)
+            cursor = conn.cursor()
+            cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+            conn.commit()
+            conn.close()
+            upload.reset_widget()
+        QMessageBox.information(self, "Reset", f"Round {round_no} uploads and DB tables cleared!")
