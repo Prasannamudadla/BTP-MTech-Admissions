@@ -6,11 +6,13 @@ from PySide6.QtWidgets import (
     QTabWidget, QPushButton, QFileDialog, QLabel,QComboBox, QTableWidget, QTableWidgetItem, QScrollArea, QGroupBox, QPushButton, QToolBox, QHBoxLayout
 )
 from ui.update_dialog import UpdateDialog
-from ui.rounds_manager import run_round_1, download_offers
+from ui.rounds_manager import run_round_1,run_round_2, download_offers
 import pandas as pd
 from database import db_manager  # your module with get_connection()
 from ui.round_upload_widget import RoundUploadWidget
 from ui.search_page import SearchPage
+from ui.seat_matrix_upload import SeatMatrixUpload
+
 
 DB_NAME = "mtech_offers.db"
 
@@ -178,6 +180,13 @@ class SeatMatrixTab(QWidget):
         super().__init__()
 
         layout = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+
+        # --- Tab 1: Manual entry (existing logic) ---
+        self.manual_tab = QWidget()
+        manual_layout = QVBoxLayout(self.manual_tab)
+        
         self.toolbox = QToolBox()
         layout.addWidget(self.toolbox)
 
@@ -198,9 +207,14 @@ class SeatMatrixTab(QWidget):
         self.save_btn = QPushButton("💾 Save Seat Matrix")
         self.save_btn.clicked.connect(self.save_matrix)
         btn_layout.addWidget(self.save_btn)
-        layout.addLayout(btn_layout)
+        manual_layout.addLayout(btn_layout)
 
         self.load_matrix()
+        self.tabs.addTab(self.manual_tab, "Manual Entry")
+
+        # --- Tab 2: Upload Excel ---
+        self.upload_tab = SeatMatrixUpload()
+        self.tabs.addTab(self.upload_tab, "Upload Excel")
 
     def create_sections(self):
         """Create collapsible sections (QToolBox) for each main category."""
@@ -376,7 +390,10 @@ class RoundsWidget(QWidget):
     def get_current_round(self):
         """Return selected round as int"""
         return int(self.round_combo.currentText())
-
+    def get_file_path(self):
+        if self.upload_widget:
+            return self.upload_widget.file_path
+        return None
     def refresh_rounds(self):
         """Populate dropdown based on already generated rounds"""
         self.round_combo.clear()
@@ -401,12 +418,30 @@ class RoundsWidget(QWidget):
         for r in range(start_round, end_round + 1):
             self.round_combo.addItem(str(r))
 
+    # def run_round(self):
+    #     """Placeholder: call your round allocation logic"""
+    #     round_no = self.get_current_round()
+    #     # Here you would implement Round 2, Round 3, etc. allocation logic
+    #     run_round_1() if round_no == 1 else QMessageBox.information(self, "Info", f"Run round {round_no} logic here")
+    #     # Refresh dropdown after allocation
+    #     self.refresh_rounds()
     def run_round(self):
-        """Placeholder: call your round allocation logic"""
         round_no = self.get_current_round()
-        # Here you would implement Round 2, Round 3, etc. allocation logic
-        run_round_1() if round_no == 1 else QMessageBox.information(self, "Info", f"Run round {round_no} logic here")
-        # Refresh dropdown after allocation
+        if round_no == 1:
+            run_round_1()
+        elif round_no == 2:
+    # Pass uploaded file paths to run_round_2
+            file1 = self.upload1.get_file_path()
+            file2 = self.upload2.get_file_path()
+            file3 = self.upload3.get_file_path()
+
+            if not all([file1, file2, file3]):
+                QMessageBox.warning(self, "Missing Files", "Please upload all three files before running Round 2.")
+                return
+
+            run_round_2(file1, file2, file3, round_no=2)
+        else:
+            QMessageBox.information(self, "Info", f"Round {round_no} allocation logic not wired yet.")
         self.refresh_rounds()
 
     def download_current_round_offers(self):
