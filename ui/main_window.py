@@ -424,6 +424,8 @@ import pandas as pd
 from database import db_manager 
 from ui.round_upload_widget import RoundUploadWidget
 from ui.search_page import SearchPage
+from ui.seat_matrix_upload import SeatMatrixUpload
+
 
 DB_NAME = "mtech_offers.db"
 
@@ -566,6 +568,13 @@ class SeatMatrixTab(QWidget):
         super().__init__()
 
         layout = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        layout.addWidget(self.tabs)
+
+        # --- Tab 1: Manual entry (existing logic) ---
+        self.manual_tab = QWidget()
+        manual_layout = QVBoxLayout(self.manual_tab)
+        
         self.toolbox = QToolBox()
         layout.addWidget(self.toolbox)
 
@@ -586,9 +595,14 @@ class SeatMatrixTab(QWidget):
         self.save_btn = QPushButton("💾 Save Seat Matrix")
         self.save_btn.clicked.connect(self.save_matrix)
         btn_layout.addWidget(self.save_btn)
-        layout.addLayout(btn_layout)
+        manual_layout.addLayout(btn_layout)
 
         self.load_matrix()
+        self.tabs.addTab(self.manual_tab, "Manual Entry")
+
+        # --- Tab 2: Upload Excel ---
+        self.upload_tab = SeatMatrixUpload()
+        self.tabs.addTab(self.upload_tab, "Upload Excel")
 
     def create_sections(self):
         """Create collapsible sections (QToolBox) for each main category."""
@@ -745,7 +759,10 @@ class RoundsWidget(QWidget):
         if self.round_combo.count() == 0:
             return 1
         return int(self.round_combo.currentText())
-
+    def get_file_path(self):
+        if self.upload_widget:
+            return self.upload_widget.file_path
+        return None
     def refresh_rounds(self):
         """Populate dropdown based on already generated rounds."""
         self.round_combo.clear()
