@@ -426,6 +426,8 @@ from ui.round_upload_widget import RoundUploadWidget
 from ui.search_page import SearchPage
 from ui.seat_matrix_upload import SeatMatrixUpload
 
+from ui.seat_matrix_upload import SeatMatrixUpload
+
 
 DB_NAME = "mtech_offers.db"
 
@@ -568,13 +570,6 @@ class SeatMatrixTab(QWidget):
         super().__init__()
 
         layout = QVBoxLayout(self)
-        self.tabs = QTabWidget()
-        layout.addWidget(self.tabs)
-
-        # --- Tab 1: Manual entry (existing logic) ---
-        self.manual_tab = QWidget()
-        manual_layout = QVBoxLayout(self.manual_tab)
-        
         self.toolbox = QToolBox()
         layout.addWidget(self.toolbox)
 
@@ -597,6 +592,22 @@ class SeatMatrixTab(QWidget):
         btn_layout.addWidget(self.save_btn)
         manual_layout.addLayout(btn_layout)
 
+        # Load initial state from DB
+        self.load_matrix()
+
+    def _on_upload_clicked(self):
+        """Wrapper called when the Upload button is clicked.
+        It calls the upload widget's upload flow and then reloads the seat matrix from DB.
+        """
+        try:
+            # trigger the upload flow (this opens the file dialog inside SeatMatrixUpload)
+            self.upload_widget.upload_excel()
+        except Exception as e:
+            # keep UX friendly: show a message but continue to attempt reload
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Upload Error", f"Upload failed: {e}")
+
+        # Reload whatever is in DB now (works whether upload succeeded or not)
         self.load_matrix()
         self.tabs.addTab(self.manual_tab, "Manual Entry")
 
@@ -620,8 +631,7 @@ class SeatMatrixTab(QWidget):
                 for j in range(3):
                     val = QTableWidgetItem("0")
                     if j != 0:  
-                        # Seats Allocated and Seats Booked are calculated/updated by the system, not manually edited
-                        val.setFlags(val.flags() & ~Qt.ItemIsEditable) 
+                        val.setFlags(val.flags() & ~Qt.ItemIsEditable)
                     table.setItem(i, j, val)
 
             self.toolbox.addItem(table, section)
@@ -631,11 +641,11 @@ class SeatMatrixTab(QWidget):
         """Load data from seat_matrix table into GUI."""
         conn = db_manager.get_connection()
         cursor = conn.cursor()
-        # Ensure we read the correct columns from the DB
         cursor.execute("SELECT category, set_seats, seats_allocated, seats_booked FROM seat_matrix")
         data = cursor.fetchall()
         conn.close()
 
+        # fill GUI with DB values
         for category, set_seats, seats_allocated, seats_booked in data:
             for section, table in self.tables.items():
                 for r in range(table.rowCount()):
@@ -653,12 +663,9 @@ class SeatMatrixTab(QWidget):
         for section, table in self.tables.items():
             for r in range(table.rowCount()):
                 category = table.verticalHeaderItem(r).text()
-                
-                # Only Set Seats (col 0) is guaranteed editable, we read other two from GUI as fallback
-                set_seats = int(table.item(r, 0).text()) 
-                seats_allocated = int(table.item(r, 1).text()) 
+                set_seats = int(table.item(r, 0).text())
+                seats_allocated = int(table.item(r, 1).text())
                 seats_booked = int(table.item(r, 2).text())
-                
                 cursor.execute("""
                     INSERT OR REPLACE INTO seat_matrix (category, set_seats, seats_allocated, seats_booked)
                     VALUES (?, ?, ?, ?)
@@ -671,11 +678,7 @@ class SeatMatrixTab(QWidget):
         msg.setWindowTitle("Saved Successfully")
         msg.setText("✅ Seat Matrix data has been saved to the database successfully!")
         msg.exec()
-
-# ----------------------------------------------------------------------
-# RoundsWidget (UPDATED LOGIC)
-# ----------------------------------------------------------------------
-
+        
 class RoundsWidget(QWidget):
     def __init__(self, total_rounds=10):
         super().__init__()
