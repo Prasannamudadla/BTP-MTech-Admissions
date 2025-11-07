@@ -67,18 +67,6 @@ class MainWindow(QMainWindow):
 
         dlg = UpdateDialog(DB_NAME, coap, self)
         dlg.exec()
-        
-    # def open_update_page(self, record: dict):
-    #     """
-    #     record: dict containing the row clicked in SearchPage
-    #     You can show a QMessageBox, populate a new tab, or open a new window
-    #     """
-    #     # Example: just show the record for now
-    #     from PySide6.QtWidgets import QMessageBox
-    #     msg = QMessageBox()
-    #     msg.setWindowTitle("Update Requested")
-    #     msg.setText(f"UPDATE requested for:\n{record}")
-    #     msg.exec()
 
     def upload_excel(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -217,7 +205,7 @@ class SeatMatrixTab(QWidget):
 
                 for j in range(3):
                     val = QTableWidgetItem("0")
-                    if j != 0:  # only 'Set Seats' editable
+                    if j != 0:  
                         val.setFlags(val.flags() & ~Qt.ItemIsEditable)
                     table.setItem(i, j, val)
 
@@ -226,16 +214,6 @@ class SeatMatrixTab(QWidget):
 
             self.toolbox.addItem(table, section)
             self.tables[section] = table
-
-    # def handle_item_changed(self, item):
-    #     """Automatically update 'Seats Allocated' when 'Set Seats' changes."""
-    #     if item.column() == 0:  # Set Seats column
-    #         try:
-    #             new_value = int(item.text())
-    #             table = item.tableWidget()
-    #             table.item(item.row(), 1).setText(str(new_value))  # copy to Seats Allocated
-    #         except ValueError:
-    #             pass  # ignore invalid (non-integer) entries
 
     def load_matrix(self):
         """Load data from seat_matrix table into GUI."""
@@ -271,7 +249,6 @@ class SeatMatrixTab(QWidget):
                 """, (category, set_seats, seats_allocated, seats_booked))
         conn.commit()
         conn.close()
-        # ✅ Show confirmation message
         from PySide6.QtWidgets import QMessageBox
         msg = QMessageBox()
         msg.setIcon(QMessageBox.Information)
@@ -279,25 +256,6 @@ class SeatMatrixTab(QWidget):
         msg.setText("✅ Seat Matrix data has been saved to the database successfully!")
         msg.exec()
         
-# class RoundsWidget(QWidget):
-#     def __init__(self,total_rounds=10):
-#         super().__init__()
-#         self.total_rounds = total_rounds
-#         layout = QVBoxLayout()
-#         self.round_upload_widget = RoundUploadWidget(max_rounds=self.total_rounds)
-#         layout.addWidget(self.round_upload_widget)
-
-#         layout.addWidget(QLabel("Round 1 Allocation"))
-
-#         self.round1_btn = QPushButton("Run Round 1 Allocation")
-#         self.round1_btn.clicked.connect(run_round_1)
-#         layout.addWidget(self.round1_btn)
-
-#         self.download_btn = QPushButton("Download Round 1 Offers")
-#         self.download_btn.clicked.connect(lambda: download_offers(1))
-#         layout.addWidget(self.download_btn)
-
-#         self.setLayout(layout)
 class RoundsWidget(QWidget):
     def __init__(self, total_rounds=10):
         super().__init__()
@@ -310,11 +268,10 @@ class RoundsWidget(QWidget):
         round_layout.addWidget(QLabel("Select Round:"))
         self.round_combo = QComboBox()
         round_layout.addWidget(self.round_combo)
-        self.refresh_rounds()
         self.layout.addLayout(round_layout)
 
         # ------------------ File Upload Widgets ------------------
-        # File 1: IIT Goa Offered Candidate Decision File
+        # File 1
         required_map_1 = [
             ("Mtech_App_no", "Mtech Application No"),
             ("Applicant_Decision", "Applicant Decision")
@@ -327,7 +284,7 @@ class RoundsWidget(QWidget):
         )
         self.layout.addWidget(self.upload1)
 
-        # File 2: IIT Goa Offered But Accepted at Different Institute File
+        # File 2
         required_map_2 = [
             ("Mtech_App_no", "Mtech Application No"),
             ("Other_Institute_Decision", "Other Institute Decision")
@@ -340,7 +297,7 @@ class RoundsWidget(QWidget):
         )
         self.layout.addWidget(self.upload2)
 
-        # File 3: Consolidated Decision File
+        # File 3
         required_map_3 = [
             ("COAP_Reg_ID", "COAP Reg ID"),
             ("Applicant_Decision", "Applicant Decision")
@@ -355,66 +312,93 @@ class RoundsWidget(QWidget):
 
         # ------------------ Action Buttons ------------------
         btn_layout = QHBoxLayout()
-        # Run Round 1 Allocation (can replace with dynamic round logic later)
-        self.round_btn = QPushButton("Run Round Allocation")
-        self.round_btn.clicked.connect(self.run_round)
-        btn_layout.addWidget(self.round_btn)
+        self.generate_btn = QPushButton("Generate Offers")
+        self.generate_btn.clicked.connect(self.run_round)
+        btn_layout.addWidget(self.generate_btn)
 
-        # Download offers button
         self.download_btn = QPushButton("Download Offers")
         self.download_btn.clicked.connect(self.download_current_round_offers)
         btn_layout.addWidget(self.download_btn)
 
-        # Reset files & DB button
         self.reset_btn = QPushButton("Reset Uploaded Files")
         self.reset_btn.clicked.connect(self.reset_round)
         btn_layout.addWidget(self.reset_btn)
 
         self.layout.addLayout(btn_layout)
 
-    # ------------------ Functions ------------------
+        # ------------------ Signals ------------------
+        self.round_combo.currentIndexChanged.connect(self.update_ui_visibility)
+
+        # Populate combo box after widgets are created
+        self.refresh_rounds()
+        self.update_ui_visibility()
+
+    # ------------------ Logic ------------------
     def get_current_round(self):
-        """Return selected round as int"""
+        """Return selected round as int."""
+        if self.round_combo.count() == 0:
+            return 1
         return int(self.round_combo.currentText())
 
     def refresh_rounds(self):
-        """Populate dropdown based on already generated rounds"""
+        """Populate dropdown based on already generated rounds."""
         self.round_combo.clear()
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
-        # Check max round in offers table
-        # cursor.execute("SELECT MAX(round_no) FROM offers")
-        # max_round = cursor.fetchone()[0]
-        # conn.close()
-        # Check if offers table exists
+
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='offers'")
         if cursor.fetchone() is None:
-            max_round = 0  # no offers generated yet
+            max_round = 0
         else:
             cursor.execute("SELECT MAX(round_no) FROM offers")
             max_round = cursor.fetchone()[0] or 0
-
         conn.close()
+
         start_round = 1
         end_round = (max_round + 1) if max_round else 1
         end_round = min(end_round, self.total_rounds)
+
         for r in range(start_round, end_round + 1):
             self.round_combo.addItem(str(r))
 
-    def run_round(self):
-        """Placeholder: call your round allocation logic"""
-        round_no = self.get_current_round()
-        # Here you would implement Round 2, Round 3, etc. allocation logic
-        run_round_1() if round_no == 1 else QMessageBox.information(self, "Info", f"Run round {round_no} logic here")
-        # Refresh dropdown after allocation
-        self.refresh_rounds()
+        self.update_ui_visibility()
 
+    def update_ui_visibility(self):
+        """Control visibility of upload widgets and buttons based on round."""
+        if not hasattr(self, 'upload1'):
+            return
+
+        round_no = self.get_current_round()
+        if round_no == 1:
+            # Round 1 — show only offer generation + download
+            self.upload1.setVisible(False)
+            self.upload2.setVisible(False)
+            self.upload3.setVisible(False)
+            self.generate_btn.setVisible(True)
+            self.download_btn.setVisible(True)
+            self.reset_btn.setVisible(False)
+        else:
+            # Rounds > 1 — show upload widgets + all buttons
+            self.upload1.setVisible(True)
+            self.upload2.setVisible(True)
+            self.upload3.setVisible(True)
+            self.generate_btn.setVisible(True)
+            self.download_btn.setVisible(True)
+            self.reset_btn.setVisible(True)
+        
+    def run_round(self):
+        """Run allocation for the current round."""
+        round_no = self.get_current_round()
+        if round_no == 1:
+            run_round_1()  # Use your actual function
+            QMessageBox.information(self, "Round 1", "Round 1 offers generated successfully!")
     def download_current_round_offers(self):
+        """Download offers for the current round."""
         round_no = self.get_current_round()
         download_offers(round_no)
 
     def reset_round(self):
-        """Delete uploaded files from DB and reset widgets"""
+        """Reset uploaded files and their DB tables for current round."""
         round_no = self.get_current_round()
         for upload in [self.upload1, self.upload2, self.upload3]:
             table_name = upload.table_name_fn(round_no)
@@ -424,4 +408,6 @@ class RoundsWidget(QWidget):
             conn.commit()
             conn.close()
             upload.reset_widget()
-        QMessageBox.information(self, "Reset", f"Round {round_no} uploads and DB tables cleared!")
+        QMessageBox.information(self, "Reset", f"Round {round_no} uploads and tables cleared!")
+        
+        
