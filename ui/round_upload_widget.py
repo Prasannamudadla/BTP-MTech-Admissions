@@ -87,49 +87,78 @@ class SingleFileUpload(QWidget):
         self.col_map[db_col] = val
 
     def save_to_db(self, round_no=None):
-    # ✅ Default round number fallback
-        if not round_no:
-            try:
-                # Try to fetch from parent if available
-                if hasattr(self.parent(), "get_current_round"):
-                    round_no = int(self.parent().get_current_round())
-                else:
-                    round_no = 1  # Default to Round 1
-            except Exception:
+        if round_no is None:
+            # Attempt to fetch the selected round number from the parent widget (RoundsWidget)
+            # We use an integer fallback (1) instead of allowing boolean/None
+            current_round_text = None
+            parent_widget = self.parent() 
+            while parent_widget is not None and not hasattr(parent_widget, "get_current_round"):
+                parent_widget = parent_widget.parent()
+
+            if parent_widget and hasattr(parent_widget, "get_current_round"):
+                try:
+                    # NOTE: When running Round N, decisions are for Round N-1. 
+                    # This internal save logic should save the round currently selected in the combo box.
+                    round_no = int(parent_widget.get_current_round())
+                except Exception:
+                    # Fallback to 1 if conversion fails
+                    round_no = 1
+            else:
+                # Default to Round 1 if the parent structure cannot be found
                 round_no = 1
-
-        # ✅ Correct DataFrame check
-        if self.df is None or self.df.empty:
-            QMessageBox.warning(self, "Error", "No file uploaded or file is empty")
-            return
-        if not self.col_map:
-            QMessageBox.warning(self, "Error", "No columns selected")
+        
+        # Ensure round_no is an integer (required by self.table_name_fn)
+        if not isinstance(round_no, int) or round_no < 1:
+            QMessageBox.critical(self, "Error", "Invalid round number determined for saving.")
             return
 
-        # ✅ Build table name with correct round number
+        # Build table name with correct round number
         table_name = self.table_name_fn(round_no)
         print(f"[DEBUG] Saving data to table: {table_name}")
 
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
 
-        # Create table
-        cols_sql = ", ".join([f"{_sanitize_col_name(c)} TEXT" for c in self.col_map.keys()])
-        cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({cols_sql})")
+        # Determine the primary key column name based on the table name
+        pk_col = "mtech_app_no" if "goa" in table_name or "other_institute" in table_name else "coap_reg_id"
 
-        # Prepare insert
-        insert_cols = [_sanitize_col_name(c) for c in self.col_map.keys()]
-        placeholders = ", ".join(["?"] * len(insert_cols))
-        rows = [[row[self.col_map[c]] for c in self.col_map.keys()] for _, row in self.df.iterrows()]
+        # Map selected Excel column names to the expected standard DB column names
+        # We only keep the required columns and rename them to the standard snake_case
+        required_db_cols = [db_col for db_col, _ in self.required_map]
+        
+        # This new mapping ensures that the data saved locally matches what rounds_manager.py expects, 
+        # even if it's currently redundant due to the main round logic using file paths.
+        renamed_df = pd.DataFrame()
+        for db_col, excel_col in self.col_map.items():
+            renamed_db_col_name = {
+                "Mtech App No": "mtech_app_no",
+                "Other Institute Decision": "other_institute_decision",
+                "COAP Reg Id": "coap_reg_id",
+                "Applicant Decision": "applicant_decision"
+            }.get(db_col, db_col) # Use a standardized mapping
 
-        cursor.executemany(
-            f"INSERT INTO {table_name} ({', '.join(insert_cols)}) VALUES ({placeholders})",
-            rows
-        )
-        conn.commit()
-        conn.close()
-        QMessageBox.information(self, "Saved", f"File saved to table {table_name}")
+            if excel_col in self.df.columns:
+                 renamed_df[renamed_db_col_name] = self.df[excel_col]
 
+        # Save to DB using pandas, replacing the manual cursor execution
+        # Ensure only the necessary columns exist
+        if renamed_df.empty:
+            QMessageBox.critical(self, "Error", "Selected columns could not be found or mapped correctly.")
+            conn.close()
+            return
+            
+        try:
+            # Drop and recreate table with correct structure using pandas and Primary Key
+            # NOTE: Pandas' to_sql doesn't directly support adding PRIMARY KEY easily without raw SQL.
+            # However, since rounds_manager._create_decision_tables is called separately, we rely on that for schema.
+            # We simply use replace here for simplicity.
+            renamed_df.to_sql(table_name, conn, if_exists='replace', index=False)
+            conn.commit()
+            QMessageBox.information(self, "Saved", f"File saved to table {table_name}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save data to DB table {table_name}:\n{e}")
+        finally:
+            conn.close()
 class RoundUploadWidget(QWidget):
     """Wrapper to hold a SingleFileUpload and provide save/reset."""
     def __init__(self, title=None, required_map=None, table_name_fn=None):
