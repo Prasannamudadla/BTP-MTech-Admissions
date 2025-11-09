@@ -424,6 +424,8 @@ import pandas as pd
 from database import db_manager 
 from ui.round_upload_widget import RoundUploadWidget
 from ui.search_page import SearchPage
+from ui.seat_matrix_upload import SeatMatrixUpload
+
 
 DB_NAME = "mtech_offers.db"
 
@@ -566,6 +568,21 @@ class SeatMatrixTab(QWidget):
         super().__init__()
 
         layout = QVBoxLayout(self)
+
+        # top: Upload widget (uses your existing seat_matrix_upload module)
+        self.upload_widget = SeatMatrixUpload()
+        layout.addWidget(self.upload_widget)
+
+        # Connect the upload button so that after upload completes we reload the UI.
+        # Note: SeatMatrixUpload.upload_excel does the DB writing and sets a status label.
+        # We call load_matrix() afterwards to refresh the visible tables.
+        self.upload_widget.upload_btn.clicked.connect(self._on_upload_clicked)
+
+        # Separator / info
+        info = QLabel("Or edit seat counts below and click Save Seat Matrix")
+        layout.addWidget(info)
+
+        # Collapsible sections using QToolBox (existing logic)
         self.toolbox = QToolBox()
         layout.addWidget(self.toolbox)
 
@@ -588,6 +605,22 @@ class SeatMatrixTab(QWidget):
         btn_layout.addWidget(self.save_btn)
         layout.addLayout(btn_layout)
 
+        # Load initial state from DB
+        self.load_matrix()
+
+    def _on_upload_clicked(self):
+        """Wrapper called when the Upload button is clicked.
+        It calls the upload widget's upload flow and then reloads the seat matrix from DB.
+        """
+        try:
+            # trigger the upload flow (this opens the file dialog inside SeatMatrixUpload)
+            self.upload_widget.upload_excel()
+        except Exception as e:
+            # keep UX friendly: show a message but continue to attempt reload
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Upload Error", f"Upload failed: {e}")
+
+        # Reload whatever is in DB now (works whether upload succeeded or not)
         self.load_matrix()
 
     def create_sections(self):
@@ -605,9 +638,8 @@ class SeatMatrixTab(QWidget):
 
                 for j in range(3):
                     val = QTableWidgetItem("0")
-                    if j != 0:  
-                        # Seats Allocated and Seats Booked are calculated/updated by the system, not manually edited
-                        val.setFlags(val.flags() & ~Qt.ItemIsEditable) 
+                    if j != 0:
+                        val.setFlags(val.flags() & ~Qt.ItemIsEditable)
                     table.setItem(i, j, val)
 
             self.toolbox.addItem(table, section)
@@ -617,11 +649,15 @@ class SeatMatrixTab(QWidget):
         """Load data from seat_matrix table into GUI."""
         conn = db_manager.get_connection()
         cursor = conn.cursor()
-        # Ensure we read the correct columns from the DB
-        cursor.execute("SELECT category, set_seats, seats_allocated, seats_booked FROM seat_matrix")
-        data = cursor.fetchall()
-        conn.close()
+        try:
+            cursor.execute("SELECT category, set_seats, seats_allocated, seats_booked FROM seat_matrix")
+            data = cursor.fetchall()
+        except Exception:
+            data = []
+        finally:
+            conn.close()
 
+        # fill GUI with DB values
         for category, set_seats, seats_allocated, seats_booked in data:
             for section, table in self.tables.items():
                 for r in range(table.rowCount()):
@@ -639,12 +675,20 @@ class SeatMatrixTab(QWidget):
         for section, table in self.tables.items():
             for r in range(table.rowCount()):
                 category = table.verticalHeaderItem(r).text()
-                
-                # Only Set Seats (col 0) is guaranteed editable, we read other two from GUI as fallback
-                set_seats = int(table.item(r, 0).text()) 
-                seats_allocated = int(table.item(r, 1).text()) 
-                seats_booked = int(table.item(r, 2).text())
-                
+                # defensive: ensure numeric parse
+                try:
+                    set_seats = int(table.item(r, 0).text())
+                except Exception:
+                    set_seats = 0
+                try:
+                    seats_allocated = int(table.item(r, 1).text())
+                except Exception:
+                    seats_allocated = 0
+                try:
+                    seats_booked = int(table.item(r, 2).text())
+                except Exception:
+                    seats_booked = 0
+
                 cursor.execute("""
                     INSERT OR REPLACE INTO seat_matrix (category, set_seats, seats_allocated, seats_booked)
                     VALUES (?, ?, ?, ?)
@@ -658,10 +702,7 @@ class SeatMatrixTab(QWidget):
         msg.setText("✅ Seat Matrix data has been saved to the database successfully!")
         msg.exec()
 
-# ----------------------------------------------------------------------
-# RoundsWidget (UPDATED LOGIC)
-# ----------------------------------------------------------------------
-
+        
 class RoundsWidget(QWidget):
     def __init__(self, total_rounds=10):
         super().__init__()
