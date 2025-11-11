@@ -298,27 +298,86 @@ def run_round(round_no):
                 return True
             return False
 
-        # --- Sub-step 5.1: Allocate Retained Candidates First (FIX: Retention Only) ---
+        # # --- Sub-step 5.1: Allocate Retained Candidates First (FIX: Retention Only) ---
+        # retained_candidates_data = [c for c in candidates if c[0] in retained_coaps_map]
+        
+        # for coap, name, base_cat, ews, gender, pwd, score in retained_candidates_data:
+            
+        #     if coap in allocated_coaps:
+        #         continue # Skip if allocated via a special rule before this loop
+
+        #     # The candidate already has a category they were offered in the previous round
+        #     retained_category = retained_coaps_map[coap]
+
+        #     allocated = False
+            
+        #     # 1. No Upgrade Check: Directly re-offer the retained seat
+        #     if try_allocate_seat(coap, name, score, retained_category, "Offered (Retained)"):
+        #         allocated = True
+            
+        #     # NOTE: If try_allocate_seat returns False, it means the seat was somehow filled
+        #     # by an 'Accept and Freeze' candidate between rounds. This should be extremely rare
+        #     # if the confirmed seat recalculation is accurate, but the logic prevents double-offering.
+        # --- Sub-step 5.1: Allocate Retained Candidates (Reintroducing Upgrade Logic) ---
         retained_candidates_data = [c for c in candidates if c[0] in retained_coaps_map]
         
         for coap, name, base_cat, ews, gender, pwd, score in retained_candidates_data:
             
             if coap in allocated_coaps:
-                continue # Skip if allocated via a special rule before this loop
+                continue 
 
-            # The candidate already has a category they were offered in the previous round
+            # The seat category the candidate was offered in the previous round
             retained_category = retained_coaps_map[coap]
+
+            # 1. Determine all possible seat keys for the candidate (for Upgrade check)
+            base_cat_norm = base_cat.strip() if base_cat else "GEN"
+            gender_norm = gender.strip().capitalize() if gender else "Male"
+            ews_norm = ews.strip().capitalize() if ews else "No"
+            seat_key_parts = ["EWS" if ews_norm=="Yes" else base_cat_norm]
+            
+            # Construct the complete list of possible keys in priority order
+            if (pwd or "").strip().capitalize() == "Yes":
+                # PWD priority keys (e.g., GEN_Female_PWD, GEN_FandM_PWD)
+                possible_keys = [f"{seat_key_parts[0]}_Female_PWD", f"{seat_key_parts[0]}_FandM_PWD"] if gender_norm=="Female" else [f"{seat_key_parts[0]}_FandM_PWD"]
+            else:
+                # Non-PWD priority keys (e.g., GEN_Female, GEN_FandM)
+                possible_keys = [f"{seat_key_parts[0]}_Female", f"{seat_key_parts[0]}_FandM"] if gender_norm=="Female" else [f"{seat_key_parts[0]}_FandM"]
+
 
             allocated = False
             
-            # 1. No Upgrade Check: Directly re-offer the retained seat
-            if try_allocate_seat(coap, name, score, retained_category, "Offered (Retained)"):
-                allocated = True
-            
-            # NOTE: If try_allocate_seat returns False, it means the seat was somehow filled
-            # by an 'Accept and Freeze' candidate between rounds. This should be extremely rare
-            # if the confirmed seat recalculation is accurate, but the logic prevents double-offering.
+            # 2. Check for Upgrade (Allocate the best available seat if it is higher than the retained seat)
+            # Since the candidate list is sorted by rank (MaxGATEScore_3yrs DESC), the first available 
+            # seat in their priority list is considered the 'best' possible offer/upgrade.
+            for key in possible_keys:
+                
+                # Check if the current priority key is the retained category
+                is_retained_seat = (key == retained_category)
+                
+                # If the seat is available, allocate it
+                if try_allocate_seat(coap, name, score, key, "Offered (Upgrade)" if not is_retained_seat else "Offered (Retained)"):
+                    
+                    # If this is the retained seat, we are done (no upgrade available)
+                    if is_retained_seat:
+                        # Mark as retained and stop the loop
+                        print(f"Candidate {name} retained their seat {retained_category}.")
+                    
+                    # If this is a different (better) seat, we are done (upgrade granted)
+                    else:
+                        print(f"Candidate {name} was upgraded from {retained_category} to {key}.")
+                        
+                    allocated = True
+                    break # Stop checking once the best available seat is secured
 
+
+            # 3. Fallback Check: Re-offer the retained seat if allocation failed AND the retained seat was never checked 
+            #    (This check should only fail if the retained seat was already filled by a permanent Acceptance, which is handled by eligibility/recalculation).
+            if not allocated:
+                # Try to forcefully re-offer the retained seat if no upgrade occurred
+                if try_allocate_seat(coap, name, score, retained_category, "Offered (Retained)"):
+                    allocated = True
+                else:
+                     print(f"Warning: Candidate {name} (Retained Seat: {retained_category}) could not be re-offered their retained seat due to quota limit.")
 
         # --- Sub-step 5.2: Allocate COMMON_PWD (Remaining candidates only) ---
         temp_common_pwd_quota = common_pwd_quota
