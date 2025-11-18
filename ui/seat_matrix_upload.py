@@ -9,9 +9,9 @@ class SeatMatrixUpload(QWidget):
         layout = QVBoxLayout(self)
         self.setLayout(layout)
 
-        self.upload_btn = QPushButton("📤 Upload Seat Matrix Excel")
+        self.upload_btn = QPushButton(" Upload Seat Matrix Excel")
         layout.addWidget(self.upload_btn)
-        self.upload_btn.clicked.connect(self.upload_excel)
+        # self.upload_btn.clicked.connect(self.upload_excel)
 
         self.status = QLabel("")
         layout.addWidget(self.status)
