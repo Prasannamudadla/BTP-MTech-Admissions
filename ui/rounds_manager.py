@@ -118,14 +118,6 @@ def _get_eligible_candidates_for_next_round(current_round):
         coaps_out.update(df_consolidated_frozen['coap_reg_id'].tolist())
 
     # 2. Gather 'Reject and Wait' candidates from the LATEST round (current_round)
-    # FIXED: Uses c.App_no for join
-    # df_rejected_out = pd.read_sql_query(f"""
-    #     SELECT c.COAP
-    #     FROM candidates c
-    #     JOIN iit_goa_offers_round{current_round} d ON d.mtech_app_no = c.App_no
-    #     WHERE d.applicant_decision = 'Reject and Wait'
-    # """, conn)
-    # coaps_out.update(df_rejected_out['COAP'].tolist())
     for r in range(1, current_round + 1):
         df_rejected_out = pd.read_sql_query(f"""
             SELECT c.COAP
@@ -279,7 +271,7 @@ def run_round(round_no):
         offers_made = []
         allocated_coaps = set()
         
-        # Split PWD and non-PWD candidates from the *eligible* list
+        # Split PWD and non-PWD candidates from the eligible list
         pwd_candidates = [c for c in candidates if (c[5] or "").strip().capitalize() == "Yes"]
         non_pwd_candidates = [c for c in candidates if (c[5] or "").strip().capitalize() != "Yes"]
 
@@ -299,26 +291,6 @@ def run_round(round_no):
             return False
 
         # # --- Sub-step 5.1: Allocate Retained Candidates First (FIX: Retention Only) ---
-        # retained_candidates_data = [c for c in candidates if c[0] in retained_coaps_map]
-        
-        # for coap, name, base_cat, ews, gender, pwd, score in retained_candidates_data:
-            
-        #     if coap in allocated_coaps:
-        #         continue # Skip if allocated via a special rule before this loop
-
-        #     # The candidate already has a category they were offered in the previous round
-        #     retained_category = retained_coaps_map[coap]
-
-        #     allocated = False
-            
-        #     # 1. No Upgrade Check: Directly re-offer the retained seat
-        #     if try_allocate_seat(coap, name, score, retained_category, "Offered (Retained)"):
-        #         allocated = True
-            
-        #     # NOTE: If try_allocate_seat returns False, it means the seat was somehow filled
-        #     # by an 'Accept and Freeze' candidate between rounds. This should be extremely rare
-        #     # if the confirmed seat recalculation is accurate, but the logic prevents double-offering.
-        # --- Sub-step 5.1: Allocate Retained Candidates (Reintroducing Upgrade Logic) ---
         retained_candidates_data = [c for c in candidates if c[0] in retained_coaps_map]
         
         for coap, name, base_cat, ews, gender, pwd, score in retained_candidates_data:
@@ -432,7 +404,20 @@ def run_round(round_no):
             ews = ews.strip().capitalize() if ews else "No"
             seat_key_parts = ["EWS" if ews=="Yes" else base_cat]
 
-            possible_keys = [f"{seat_key_parts[0]}_Female", f"{seat_key_parts[0]}_FandM"] if gender=="Female" else [f"{seat_key_parts[0]}_FandM"]
+            # ---- CHANGE: Try GENERAL seats first (open to all categories), then the candidate's own category ----
+            general_keys = (
+                ["GEN_Female", "GEN_FandM"] if gender == "Female"
+                else ["GEN_FandM"]
+            )
+
+            category_keys = (
+                [f"{seat_key_parts[0]}_Female", f"{seat_key_parts[0]}_FandM"]
+                if gender == "Female"
+                else [f"{seat_key_parts[0]}_FandM"]
+            )
+
+            possible_keys = general_keys + category_keys
+            # -----------------------------------------------------------------------------------------------
 
             for key in possible_keys:
                 if try_allocate_seat(coap, name, score, key, "Offered"):
@@ -489,6 +474,5 @@ def download_offers(round_no=1):
 
     QMessageBox.information(None, "Download Complete", f"Offers saved as {filename}")
 
-# Note: The original `run_round_1` is replaced by the generic `run_round(1)`
+# Note: The original run_round_1 is replaced by the generic run_round(1)
 # to allow for a unified, multi-round process.
-
