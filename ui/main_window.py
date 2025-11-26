@@ -22,7 +22,7 @@ REQUIRED_MAPPING_TARGETS = [
 
 # main_window.py
 import sqlite3
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,Signal
 from PySide6.QtWidgets import (
     QApplication, QMainWindow,QDialog, QWidget, QVBoxLayout, QMessageBox, 
     QTabWidget, QPushButton, QFileDialog, QLabel, QComboBox, QTableWidget, 
@@ -88,7 +88,7 @@ class MainWindow(QMainWindow):
         # Rounds tab
         self.rounds_tab = RoundsWidget(total_rounds=self.total_rounds)
         self.tabs.addTab(self.rounds_tab, "Rounds")
-        
+        self.rounds_tab.roundsRefreshed.connect(self.seat_matrix_tab.load_matrix)
         # Search tab
         self.search_tab = SearchPage(db_path="mtech_offers.db")
         self.search_tab.updateRequested.connect(self.open_update_page) 
@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
             
             # Refresh all relevant UI components after a full reset
             self.update_init_tab_state()
+            self.seat_matrix_tab.reset_upload_status()
             self.seat_matrix_tab.load_matrix() # Reload the empty seat matrix table
             self.rounds_tab.refresh_rounds() # Reset rounds
             
@@ -366,6 +367,7 @@ class SeatMatrixTab(QWidget):
         btn_layout.addWidget(self.save_btn)
         manual_layout.addLayout(btn_layout)
 
+        self.is_rounds_started = False
         # Load initial state from DB
         self.load_matrix()
 
@@ -410,9 +412,47 @@ class SeatMatrixTab(QWidget):
 
             self.toolbox.addItem(table, section)
             self.tables[section] = table
+    def reset_upload_status(self): # <--- NEW METHOD
+        """Resets the status message of the upload widget."""
+        try:
+            # Assuming SeatMatrixUpload has a public method or attribute to clear the status.
+            # We'll assume the internal status label is named 'status_label' and we can set its text.
+            # If your SeatMatrixUpload class has a different way to clear the message, adjust this line.
+            self.upload_widget.reset_status()
+        except AttributeError:
+            # Fallback if status_label is private or named differently.
+            # If the upload widget is a simple QWidget, this might not work.
+            # If this still fails, you'll need to modify the SeatMatrixUpload class itself.
+            pass
+    
+    def check_offers_exist(self):
+        """Checks if any offers exist in the 'offers' table."""
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        # Check if 'offers' table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='offers'")
+        if cursor.fetchone() is None:
+            conn.close()
+            return False
 
+        # Check if offers exist
+        cursor.execute("SELECT COUNT(*) FROM offers")
+        count = cursor.fetchone()[0]
+        conn.close()
+        return count > 0
+    
     def load_matrix(self):
         """Load data from seat_matrix table into GUI."""
+        self.is_rounds_started = self.check_offers_exist()
+        is_editable = not self.is_rounds_started
+        # 1. Update the Upload Widget
+        self.upload_widget.upload_btn.setEnabled(is_editable)
+        self.upload_widget.setEnabled(is_editable)
+
+        # 2. Update the Manual Save Button
+        self.save_btn.setEnabled(is_editable)
+        
         conn = db_manager.get_connection()
         cursor = conn.cursor()
         try:
@@ -430,6 +470,19 @@ class SeatMatrixTab(QWidget):
                     # We only need to reset the text value.
                     table.blockSignals(True)
                     table.item(r, c).setText("0")
+                    table.blockSignals(False)
+                    
+                    # Set the 'Set Seats' column (index 0) editability
+                    if c == 0:
+                        item_flags = table.item(r, c).flags()
+                        if is_editable:
+                            # Enable: Keep it editable
+                            table.item(r, c).setFlags(item_flags | Qt.ItemIsEditable)
+                        else:
+                            # Disable: Make it non-editable
+                            table.item(r, c).setFlags(item_flags & ~Qt.ItemIsEditable)
+                    # Columns 1 & 2 are always non-editable (set in create_sections)
+                    
                     table.blockSignals(False)
         # fill GUI with DB values
         for category, set_seats, seats_allocated, seats_booked in data:
@@ -464,12 +517,17 @@ class SeatMatrixTab(QWidget):
         msg.setWindowTitle("Saved Successfully")
         msg.setText("Seat Matrix data has been saved to the database successfully!")
         msg.exec()
+            
 class RoundsWidget(QWidget):
+    roundsRefreshed = Signal()
     def __init__(self, total_rounds=10):
         super().__init__()
         self.total_rounds = total_rounds
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
+        
+        # from PySide6.QtCore import Signal
+        # self.roundsRefreshed = Signal()
 
         # ------------------ Round Selection ------------------
         round_layout = QHBoxLayout()
@@ -545,6 +603,7 @@ class RoundsWidget(QWidget):
             self.round_combo.addItem(str(r))
 
         self.update_ui_visibility()
+        self.roundsRefreshed.emit()
     
     def update_ui_visibility(self):
         if self.round_combo.count() == 0:
@@ -703,7 +762,6 @@ class RoundsWidget(QWidget):
 
         # 3. Refresh UI
         self.refresh_rounds() # Re-populates the dropdown based on MAX(round_no) in 'offers' table
-        
         # The current round is now the new MAX + 1, so the UI should switch to the upload view for the next round
         self.update_ui_visibility()
         

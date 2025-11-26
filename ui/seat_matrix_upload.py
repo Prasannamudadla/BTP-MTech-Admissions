@@ -42,7 +42,11 @@ class SeatMatrixUpload(QWidget):
             conn.commit()
             conn.close()
 
-            self.status.setText("✅ Seat matrix uploaded successfully!")
-
+            self.status.setText("Seat matrix uploaded successfully!")
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+            
+    def reset_status(self): 
+        """Clears the status message shown in this widget."""
+        self.status.setText("")
+        self.status.setStyleSheet("")
