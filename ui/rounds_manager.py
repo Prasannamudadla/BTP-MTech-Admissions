@@ -48,49 +48,77 @@ def _create_decision_tables(cursor, round_no):
 
 # --- Main Logic Functions ---
 
-def upload_round_decisions(round_no, iit_goa_report, other_iit_report, consolidated_report):
-    """
-    Reads the three decision reports for a given round and saves them to the database.
+# def upload_round_decisions(round_no, iit_goa_report, other_iit_report, consolidated_report):
+#     """
+#     Reads the three decision reports for a given round and saves them to the database.
     
-    NOTE: Column names are standardized here for consistency with the DB schema.
-    """
+#     NOTE: Column names are standardized here for consistency with the DB schema.
+#     """
+#     conn = sqlite3.connect(DB_NAME)
+#     cursor = conn.cursor()
+
+#     try:
+#         _create_decision_tables(cursor, round_no)
+
+#         # 1. IIT Goa Candidate Decision Report (Requires "MTech Application No", "Applicant Decision")
+#         df_goa = _read_maybe_df(iit_goa_report)
+#         df_goa = df_goa[["MTech Application No", "Applicant Decision"]].rename(
+#             columns={"MTech Application No": "mtech_app_no", "Applicant Decision": "applicant_decision"}
+#         )
+#         df_goa.to_sql(f'iit_goa_offers_round{round_no}', conn, if_exists='replace', index=False)
+        
+#         # 2. IIT Goa Offered But Accept and Freeze at Other Institutes (Requires "MTech Application No", "Other Institution Decision")
+#         df_other = _read_maybe_df(other_iit_report)
+#         df_other = df_other[["MTech Application No", "Other Institution Decision"]].rename(
+#             columns={"MTech Application No": "mtech_app_no", "Other Institution Decision": "other_institute_decision"}
+#         )
+#         df_other.to_sql(f'accepted_other_institute_round{round_no}', conn, if_exists='replace', index=False)
+        
+#         # 3. Consolidated Accept and Freeze Candidates Across All Institutes (Requires "COAP Reg Id", "Applicant Decision")
+#         df_consolidated = _read_maybe_df(consolidated_report)
+#         df_consolidated = df_consolidated[["COAP Reg Id", "Applicant Decision"]].rename(
+#             columns={"COAP Reg Id": "coap_reg_id", "Applicant Decision": "applicant_decision"}
+#         )
+#         # Assuming COAP Reg Id is the COAP number in the candidates table for linking
+#         df_consolidated.to_sql(f'consolidated_decisions_round{round_no}', conn, if_exists='replace', index=False)
+
+#         conn.commit()
+#         # The message is correct if round_no is passed as the previous round (N-1)
+#         QMessageBox.information(None, "Success", f"Decisions for Round {round_no} uploaded and saved successfully!")
+
+#     except Exception as e:
+#         QMessageBox.critical(None, "Error", f"Error during decision upload for Round {round_no}:\n{e}")
+#     finally:
+#         conn.close()
+def upload_round_decisions(round_no, goa_widget, other_widget, cons_widget):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
     try:
         _create_decision_tables(cursor, round_no)
 
-        # 1. IIT Goa Candidate Decision Report (Requires "MTech Application No", "Applicant Decision")
-        df_goa = _read_maybe_df(iit_goa_report)
-        df_goa = df_goa[["MTech Application No", "Applicant Decision"]].rename(
-            columns={"MTech Application No": "mtech_app_no", "Applicant Decision": "applicant_decision"}
-        )
+        # 1. IIT Goa Report
+        df_goa = goa_widget.get_mapped_dataframe()
         df_goa.to_sql(f'iit_goa_offers_round{round_no}', conn, if_exists='replace', index=False)
-        
-        # 2. IIT Goa Offered But Accept and Freeze at Other Institutes (Requires "MTech Application No", "Other Institution Decision")
-        df_other = _read_maybe_df(other_iit_report)
-        df_other = df_other[["MTech Application No", "Other Institution Decision"]].rename(
-            columns={"MTech Application No": "mtech_app_no", "Other Institution Decision": "other_institute_decision"}
-        )
+
+        # 2. Other IIT Accept/Freeze
+        df_other = other_widget.get_mapped_dataframe()
         df_other.to_sql(f'accepted_other_institute_round{round_no}', conn, if_exists='replace', index=False)
-        
-        # 3. Consolidated Accept and Freeze Candidates Across All Institutes (Requires "COAP Reg Id", "Applicant Decision")
-        df_consolidated = _read_maybe_df(consolidated_report)
-        df_consolidated = df_consolidated[["COAP Reg Id", "Applicant Decision"]].rename(
-            columns={"COAP Reg Id": "coap_reg_id", "Applicant Decision": "applicant_decision"}
-        )
-        # Assuming COAP Reg Id is the COAP number in the candidates table for linking
-        df_consolidated.to_sql(f'consolidated_decisions_round{round_no}', conn, if_exists='replace', index=False)
+
+        # 3. Consolidated All-Institutes Decisions
+        df_cons = cons_widget.get_mapped_dataframe()
+        df_cons.to_sql(f'consolidated_decisions_round{round_no}', conn, if_exists='replace', index=False)
 
         conn.commit()
-        # The message is correct if round_no is passed as the previous round (N-1)
-        QMessageBox.information(None, "Success", f"Decisions for Round {round_no} uploaded and saved successfully!")
+        QMessageBox.information(None, "Success", f"Round {round_no} decisions uploaded successfully!")
 
     except Exception as e:
-        QMessageBox.critical(None, "Error", f"Error during decision upload for Round {round_no}:\n{e}")
+        QMessageBox.critical(None, "Error", f"Error during upload:\n{e}")
+
     finally:
         conn.close()
 
+        
 def _get_eligible_candidates_for_next_round(current_round):
     """
     CORRECTED LOGIC: Determines the COAP IDs eligible for the next round (current_round + 1).
