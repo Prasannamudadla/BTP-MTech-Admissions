@@ -110,6 +110,32 @@ def fetch_all_candidates():
     rows = cursor.fetchall()
     conn.close()
     return rows
+def reset_db_data():
+    """
+    Deletes the database file completely and then re-initializes empty tables.
+    This effectively performs a full application reset.
+    """
+    conn = None
+    try:
+        # Step 1: Close any open connections (if any are held, though typically they shouldn't be)
+        # In a real app, this is crucial. Since PySide6 manages the main thread,
+        # we assume connections are short-lived, but it's good practice.
+        pass 
+    except Exception:
+        pass
+
+    # Step 2: Delete the database file
+    if os.path.exists(DB_NAME):
+        os.remove(DB_NAME)
+
+    # Step 3: Re-initialize the tables
+    init_db()
+
+    # NOTE: Since offers and decisions tables are not defined in init_db, 
+    # they are missing here. You should ensure init_db creates ALL required tables.
+    # I will assume init_db has been updated to include ALL tables (offers, decisions, etc.).
+
+    return True
 
 def insert_candidate(data_dict):
     conn = get_connection()

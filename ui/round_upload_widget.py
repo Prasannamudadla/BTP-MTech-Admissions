@@ -54,6 +54,7 @@ class SingleFileUpload(QWidget):
             self.layout.removeWidget(self.table_widget)
             self.table_widget.deleteLater()
             self.table_widget = None
+        
     def select_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select Excel File", "", "Excel Files (*.xlsx *.xls)")
         if not path:
