@@ -1,3 +1,17 @@
+import datetime
+
+def dynamic_required_gate_cols():
+    current = datetime.datetime.now().year % 100 
+    years = [current, current - 1, current - 2]
+
+    cols = []
+    for y in years:
+        cols += [
+            f"GATE{y}Score",
+            f"GATE{y}RollNo"
+        ]
+    return cols
+
 REQUIRED_MAPPING_TARGETS = [
     "COAP",
     "App_no",
@@ -8,12 +22,7 @@ REQUIRED_MAPPING_TARGETS = [
     "Ews",
     "Gender",
     "Category",
-    "GATE22Score",
-    "GATE23Score",
-    "GATE24Score",
-    "GATE22RollNo",
-    "GATE23RollNo",
-    "GATE24RollNo",
+] + dynamic_required_gate_cols() + [
     "HSSC_per",
     "SSC_per",
     "Degree_Per_8th",
@@ -26,7 +35,7 @@ from PySide6.QtCore import Qt,Signal
 from PySide6.QtWidgets import (
     QApplication, QMainWindow,QDialog, QWidget, QVBoxLayout, QMessageBox, 
     QTabWidget, QPushButton, QFileDialog, QLabel, QComboBox, QTableWidget, 
-    QTableWidgetItem, QScrollArea, QGroupBox, QToolBox, QHBoxLayout
+    QTableWidgetItem, QScrollArea, QGroupBox, QToolBox, QHBoxLayout,QToolButton,QSizePolicy
 )
 import re, difflib, json
 import numpy as np
@@ -34,6 +43,7 @@ from ui.update_dialog import UpdateDialog
 # IMPORTANT CHANGE: Import the generic multi-round functions
 from ui.rounds_manager import run_round, download_offers, upload_round_decisions 
 import pandas as pd
+import re
 from database import db_manager 
 from ui.round_upload_widget import RoundUploadWidget
 from ui.search_page import SearchPage
@@ -258,6 +268,17 @@ class MainWindow(QMainWindow):
                 "max gate score": "MaxGATEScore_3yrs"
             }
 
+            current = datetime.datetime.now().year % 100  
+            years = [current, current - 1, current - 2]
+
+            for y in years:
+                synonyms.update({
+                    f"gate {y} score": f"GATE{y}Score",
+                    f"gate {y} marks": f"GATE{y}Score",
+                    f"gate {y} roll": f"GATE{y}RollNo",
+                    f"gate {y} roll number": f"GATE{y}RollNo",
+                    f"gate {y} rollno": f"GATE{y}RollNo",
+                })
             # Auto match
             mapping = {}
             for tgt in table_columns:
@@ -279,15 +300,51 @@ class MainWindow(QMainWindow):
                     continue
 
                 # Fuzzy
+                def extract_year(s):
+                    nums = re.findall(r'\d+', s)
+                    return nums[0] if nums else None
+
+                def token_sim(a, b):
+                    a_tokens = re.findall(r'[A-Za-z]+', a.lower())
+                    b_tokens = re.findall(r'[A-Za-z]+', b.lower())
+                    return len(set(a_tokens) & set(b_tokens))
+
+                req_year = extract_year(tgt_norm)
+
                 best = None
-                best_score = 0
+                best_score = -1
+
                 for src_norm in src_norm_list:
-                    score = difflib.SequenceMatcher(None, tgt_norm, src_norm).ratio()
+                    col_year = extract_year(src_norm)
+
+                    # Rule 1: year must match (23→23, 24→24)
+                    if req_year and col_year and req_year != col_year:
+                        continue
+
+                    score = token_sim(tgt_norm, src_norm)
+
+                    # Rule 2: extra weight for correct type (score/rank/roll)
+                    if "score" in tgt_norm and "score" in src_norm:
+                        score += 2
+                    if "rank" in tgt_norm and "rank" in src_norm:
+                        score += 2
+                    if "roll" in tgt_norm and "roll" in src_norm:
+                        score += 2
+
                     if score > best_score:
                         best_score = score
                         best = src_norm
 
-                mapping[tgt] = src_norm_map[best] if best_score >= 0.65 else None
+                mapping[tgt] = src_norm_map[best] if best_score > 0 else None
+                # best = None
+                # best_score = 0
+                # for src_norm in src_norm_list:
+                #     score = difflib.SequenceMatcher(None, tgt_norm, src_norm).ratio()
+                #     if score > best_score:
+                #         best_score = score
+                #         best = src_norm
+
+                # mapping[tgt] = src_norm_map[best] if best_score >= 0.65 else None
 
             # Preview dialog
             dlg = MappingPreviewDialog(mapping, df.columns, required_targets=REQUIRED_MAPPING_TARGETS, parent=self)
@@ -345,9 +402,29 @@ class SeatMatrixTab(QWidget):
         super().__init__()
 
         layout = QVBoxLayout(self)
-        self.toolbox = QToolBox()
-        layout.addWidget(self.toolbox)
 
+        # top: Upload widget (uses your existing seat_matrix_upload module)
+        self.upload_widget = SeatMatrixUpload()
+        layout.addWidget(self.upload_widget)
+
+        # Connect the upload button so that after upload completes we reload the UI.
+        # Note: SeatMatrixUpload.upload_excel does the DB writing and sets a status label.
+        # We call load_matrix() afterwards to refresh the visible tables.
+        self.upload_widget.upload_btn.clicked.connect(self._on_upload_clicked)
+
+        # Separator / info
+        info = QLabel("Or edit seat counts below and click Save Seat Matrix")
+        layout.addWidget(info)
+        
+        # Collapsible sections using QToolBox
+        # self.toolbox = QToolBox()
+        # layout.addWidget(self.toolbox)
+        self.accordion = QWidget()
+        self.accordion_layout = QVBoxLayout(self.accordion)
+        self.accordion_layout.setContentsMargins(0, 0, 0, 0)
+        self.accordion_layout.setSpacing(6)
+        layout.addWidget(self.accordion)
+        
         self.categories = {
             "COMMON_PWD": ["COMMON_PWD"],
             "EWS": ["EWS_FandM", "EWS_FandM_PWD", "EWS_Female", "EWS_Female_PWD"],
@@ -385,33 +462,208 @@ class SeatMatrixTab(QWidget):
 
         # Reload whatever is in DB now (works whether upload succeeded or not)
         self.load_matrix()
-        self.tabs.addTab(self.manual_tab, "Manual Entry")
-
-        # --- Tab 2: Upload Excel ---
-        self.upload_tab = SeatMatrixUpload()
-        self.tabs.addTab(self.upload_tab, "Upload Excel")
-
     def create_sections(self):
-        """Create collapsible sections (QToolBox) for each main category."""
+        """
+        Build a simple accordion: a QToolButton header (checkable) + a content widget (table).
+        All sections start collapsed. Clicking a header toggles its content. When a header is
+        opened other sections will close (accordion behavior). Click same header again to collapse.
+        """
+        # clear any previous content (safe if re-run)
+        for i in reversed(range(self.accordion_layout.count())):
+            w = self.accordion_layout.itemAt(i).widget()
+            if w:
+                w.setParent(None)
+
+        # containers to keep references
+        self.header_buttons = {}  # section -> QToolButton
+        self.content_widgets = {}  # section -> QWidget (contains the QTableWidget)
+        self.tables = {}  # keep your existing mapping section -> QTableWidget
+
         for section, subcats in self.categories.items():
+            # Header (toggle button)
+            header = QToolButton()
+            header.setText(section)
+            header.setCheckable(True)
+            header.setChecked(False)  # collapsed initially
+            header.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            header.setStyleSheet("""
+                QToolButton {
+                    text-align: center;
+                    padding: 10px;
+                    font-weight: 600;
+                    border: 1px solid #e6e6e6;
+                    background: #ffffff;
+                }
+                QToolButton:checked {
+                    background: #fafafa;
+                }
+            """)
+            header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+            self.accordion_layout.addWidget(header)
+
+            # Content container (will hold the QTableWidget)
+            content = QWidget()
+            content_layout = QVBoxLayout(content)
+            content_layout.setContentsMargins(8, 8, 8, 8)
+            content_layout.setSpacing(6)
+
             table = QTableWidget()
             table.setRowCount(len(subcats))
             table.setColumnCount(3)
             table.setHorizontalHeaderLabels(["Set Seats", "Seats Allocated", "Seats Booked"])
 
-            for i, sub in enumerate(subcats):
+            # Fill rows / vertical headers
+            for row_idx, sub in enumerate(subcats):
                 header_item = QTableWidgetItem(sub)
                 header_item.setFlags(header_item.flags() & ~Qt.ItemIsEditable)
-                table.setVerticalHeaderItem(i, header_item)
-
-                for j in range(3):
+                table.setVerticalHeaderItem(row_idx, header_item)
+                for col in range(3):
                     val = QTableWidgetItem("0")
-                    if j != 0:  
+                    if col != 0:
                         val.setFlags(val.flags() & ~Qt.ItemIsEditable)
-                    table.setItem(i, j, val)
+                    table.setItem(row_idx, col, val)
 
-            self.toolbox.addItem(table, section)
+            # Layout / sizing for neatness
+            table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            table.setMaximumHeight(180)
+            # column resize behaviour (optional tweak)
+            try:
+                from PySide6.QtWidgets import QHeaderView
+                table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+                table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+                table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+            except Exception:
+                pass
+
+            content_layout.addWidget(table)
+            content.setVisible(False)  # collapsed initially
+            self.accordion_layout.addWidget(content)
+
+            # store references
+            self.header_buttons[section] = header
+            self.content_widgets[section] = content
             self.tables[section] = table
+
+            # connect signals: toggle content when header toggles
+            header.toggled.connect(lambda checked, s=section: self._on_header_toggled(s, checked))
+
+            # when user edits 'Set Seats' (col 0) update header label
+            table.itemChanged.connect(lambda item, _table=table, _section=section:
+                                    self.on_table_item_changed(item, _table, _section))
+
+        # spacer to push Save button to bottom if desired
+        self.accordion_layout.addStretch()
+        # update header labels based on initial values (zeroes)
+        self.update_all_section_labels()
+        
+
+    # def create_sections(self):
+    #     """Create collapsible sections (QToolBox) for each main category."""
+    #     for section, subcats in self.categories.items():
+    #         table = QTableWidget()
+    #         table.setRowCount(len(subcats))
+    #         table.setColumnCount(3)
+    #         table.setHorizontalHeaderLabels(["Set Seats", "Seats Allocated", "Seats Booked"])
+
+    #         for i, sub in enumerate(subcats):
+    #             header_item = QTableWidgetItem(sub)
+    #             header_item.setFlags(header_item.flags() & ~Qt.ItemIsEditable)
+    #             table.setVerticalHeaderItem(i, header_item)
+
+    #             for j in range(3):
+    #                 val = QTableWidgetItem("0")
+    #                 if j != 0:
+    #                     val.setFlags(val.flags() & ~Qt.ItemIsEditable)
+    #                 table.setItem(i, j, val)
+
+    #         self.toolbox.addItem(table, section)
+    #         self.tables[section] = table
+    
+    def _on_header_toggled(self, section: str, checked: bool):
+        """
+        When a header is toggled:
+        - if checked=True: show its content and uncheck/close other sections (accordion behaviour)
+        - if checked=False: hide its content
+        """
+        # If opening this section, close others
+        if checked:
+            for sec, btn in self.header_buttons.items():
+                if sec != section:
+                    # block signals to avoid recursion
+                    btn.blockSignals(True)
+                    btn.setChecked(False)
+                    btn.blockSignals(False)
+                    self.content_widgets[sec].setVisible(False)
+            # show this content
+            self.content_widgets[section].setVisible(True)
+        else:
+            # hide this content
+            self.content_widgets[section].setVisible(False)
+            
+    def _on_toolbox_current_changed(self, index: int):
+        # Show only the currently selected widget; hide the rest
+        for i in range(self.toolbox.count()):
+            w = self.toolbox.widget(i)
+            w.setVisible(i == index)
+            
+    def on_table_item_changed(self, item: QTableWidgetItem, table: QTableWidget, section: str):
+        """Update the section label when Set Seats (col 0) changes."""
+        if item is None:
+            return
+        if item.column() != 0:
+            return
+        # don't react to programmatic changes
+        if table.signalsBlocked():
+            return
+        self.update_section_label(section, table)
+              
+    def update_section_label(self, section: str, table: QTableWidget):
+        """
+        Build a compact summary string showing only subcategories with seats > 0.
+        If nothing has seats, just show the section name.
+        Also truncate very long headers with ellipsis.
+        """
+        parts = []
+        for r in range(table.rowCount()):
+            vheader = table.verticalHeaderItem(r)
+            if vheader is None:
+                continue
+            name = vheader.text().strip()
+            item = table.item(r, 0)
+            try:
+                seats = int(item.text()) if item and item.text() != "" else 0
+            except Exception:
+                seats = 0
+            # Only include non-zero seats in the header summary
+            if seats > 0:
+                parts.append(f"{name} ({seats})")
+
+        # If there are non-zero items show them, otherwise just the section name
+        if parts:
+            summary = f"{section} : " + "  ".join(parts)
+        else:
+            summary = section
+
+        # Truncate to keep header compact (adjust length as needed)
+        MAX_LEN = 80
+        if len(summary) > MAX_LEN:
+            summary = summary[:MAX_LEN - 3] + "..."
+
+        # idx = self.toolbox.indexOf(table)
+        # if idx != -1:
+        #     self.toolbox.setItemText(idx, summary)
+        # Set header button text (accordion)
+        btn = self.header_buttons.get(section)
+        if btn:
+            btn.setText(summary)
+            
+    def update_all_section_labels(self):
+        """Update labels for all created tables."""
+        for section, table in self.tables.items():
+            table.blockSignals(True)
+            self.update_section_label(section, table)
+            table.blockSignals(False)
+                   
     def reset_upload_status(self): # <--- NEW METHOD
         """Resets the status message of the upload widget."""
         try:

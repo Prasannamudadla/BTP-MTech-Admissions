@@ -89,11 +89,20 @@ class SingleFileUpload(QWidget):
 
             combo = QComboBox()
             combo.addItems(self.df.columns.tolist())
+
+            # --- AUTO-MATCH HERE ---
+            auto = self.best_match(db_col, self.df.columns.tolist())
+            if auto:
+                combo.setCurrentText(auto)
+                self.set_col_map(db_col, auto)
+            else:
+                # fallback: first column
+                combo.setCurrentText(self.df.columns[0])
+                self.set_col_map(db_col, self.df.columns[0])
+
             combo.currentTextChanged.connect(lambda val, db=db_col: self.set_col_map(db, val))
             self.table_widget.setCellWidget(i, 1, combo)
 
-            # Default: pick the first column
-            self.set_col_map(db_col, self.df.columns[0])
 
         self.layout.addWidget(self.table_widget)
 
@@ -101,6 +110,23 @@ class SingleFileUpload(QWidget):
         self.col_map[db_col] = excel_col
     def get_file_path(self):
         return self.file_path
+    @staticmethod
+    def best_match(required, columns):
+        req_norm = required.lower().replace(" ", "_")
+        cols_norm = [c.lower().replace(" ", "_") for c in columns]
+
+        # 1. Exact match
+        if req_norm in cols_norm:
+            return columns[cols_norm.index(req_norm)]
+
+        # 2. Fuzzy match
+        import difflib
+        close = difflib.get_close_matches(req_norm, cols_norm, n=1, cutoff=0.55)
+        if close:
+            return columns[cols_norm.index(close[0])]
+
+        return None
+
 
     def get_mapped_dataframe(self):
         """Return df with DB column names based on selected mapping."""

@@ -24,6 +24,7 @@
 
 import sqlite3
 import os
+import datetime
 
 DB_NAME = "mtech_offers.db"
 
@@ -31,6 +32,26 @@ def get_connection():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
+
+def generate_gate_year_columns():
+    """
+    Returns list of GATE year column definitions for:
+    - current year
+    - previous year
+    - previous previous year
+    """
+    current_year = datetime.datetime.now().year % 100  # Convert 2026 → 26
+    years = [current_year, current_year - 1, current_year - 2]
+
+    columns = []
+    for y in years:
+        columns += [
+            (f"GATE{y}RollNo", "TEXT"),
+            (f"GATE{y}Rank", "INTEGER"),
+            (f"GATE{y}Score", "REAL"),
+            (f"GATE{y}Disc", "TEXT"),
+        ]
+    return columns
 
 def init_db():
     """
@@ -41,7 +62,11 @@ def init_db():
     cur = conn.cursor()
 
     # ---- Candidates table ----
-    cur.execute("""
+    gate_columns = generate_gate_year_columns()
+
+    gate_column_sql = ",\n".join([f"{col} {dtype}" for col, dtype in gate_columns])
+
+    cur.execute(f"""
     CREATE TABLE IF NOT EXISTS candidates (
         Si_NO INTEGER,
         App_no TEXT PRIMARY KEY,
@@ -53,25 +78,19 @@ def init_db():
         Gender TEXT,
         Category TEXT,
         COAP TEXT,
-        GATE22RollNo TEXT,
-        GATE22Rank INTEGER,
-        GATE22Score REAL,
-        GATE22Disc TEXT,
-        GATE21RollNo TEXT,
-        GATE21Rank INTEGER,
-        GATE21Score REAL,
-        GATE21Disc TEXT,
-        GATE20RollNo TEXT,
-        GATE20Rank INTEGER,
-        GATE20Score REAL,
-        GATE20Disc TEXT,
+
+        {gate_column_sql},
+
         MaxGATEScore_3yrs REAL,
+
         HSSC_board TEXT,
         HSSC_date TEXT,
         HSSC_per REAL,
+
         SSC_board TEXT,
         SSC_date TEXT,
         SSC_per REAL,
+
         Degree_Qualification TEXT,
         Degree_PassingDate TEXT,
         Degree_Branch TEXT,
@@ -81,6 +100,7 @@ def init_db():
         Degree_CGPA_8th REAL,
         Degree_Per_7th REAL,
         Degree_Per_8th REAL,
+        
         ExtraColumn TEXT,
         GATE_Roll_num TEXT
     )
