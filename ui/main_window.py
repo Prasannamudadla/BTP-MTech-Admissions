@@ -300,51 +300,51 @@ class MainWindow(QMainWindow):
                     continue
 
                 # Fuzzy
-                def extract_year(s):
-                    nums = re.findall(r'\d+', s)
-                    return nums[0] if nums else None
+                # def extract_year(s):
+                #     nums = re.findall(r'\d+', s)
+                #     return nums[0] if nums else None
 
-                def token_sim(a, b):
-                    a_tokens = re.findall(r'[A-Za-z]+', a.lower())
-                    b_tokens = re.findall(r'[A-Za-z]+', b.lower())
-                    return len(set(a_tokens) & set(b_tokens))
+                # def token_sim(a, b):
+                #     a_tokens = re.findall(r'[A-Za-z]+', a.lower())
+                #     b_tokens = re.findall(r'[A-Za-z]+', b.lower())
+                #     return len(set(a_tokens) & set(b_tokens))
 
-                req_year = extract_year(tgt_norm)
+                # req_year = extract_year(tgt_norm)
 
-                best = None
-                best_score = -1
-
-                for src_norm in src_norm_list:
-                    col_year = extract_year(src_norm)
-
-                    # Rule 1: year must match (23→23, 24→24)
-                    if req_year and col_year and req_year != col_year:
-                        continue
-
-                    score = token_sim(tgt_norm, src_norm)
-
-                    # Rule 2: extra weight for correct type (score/rank/roll)
-                    if "score" in tgt_norm and "score" in src_norm:
-                        score += 2
-                    if "rank" in tgt_norm and "rank" in src_norm:
-                        score += 2
-                    if "roll" in tgt_norm and "roll" in src_norm:
-                        score += 2
-
-                    if score > best_score:
-                        best_score = score
-                        best = src_norm
-
-                mapping[tgt] = src_norm_map[best] if best_score > 0 else None
                 # best = None
-                # best_score = 0
+                # best_score = -1
+
                 # for src_norm in src_norm_list:
-                #     score = difflib.SequenceMatcher(None, tgt_norm, src_norm).ratio()
+                #     col_year = extract_year(src_norm)
+
+                #     # Rule 1: year must match (23→23, 24→24)
+                #     if req_year and col_year and req_year != col_year:
+                #         continue
+
+                #     score = token_sim(tgt_norm, src_norm)
+
+                #     # Rule 2: extra weight for correct type (score/rank/roll)
+                #     if "score" in tgt_norm and "score" in src_norm:
+                #         score += 2
+                #     if "rank" in tgt_norm and "rank" in src_norm:
+                #         score += 2
+                #     if "roll" in tgt_norm and "roll" in src_norm:
+                #         score += 2
+
                 #     if score > best_score:
                 #         best_score = score
                 #         best = src_norm
 
-                # mapping[tgt] = src_norm_map[best] if best_score >= 0.65 else None
+                # mapping[tgt] = src_norm_map[best] if best_score > 0 else None
+                best = None
+                best_score = 0
+                for src_norm in src_norm_list:
+                    score = difflib.SequenceMatcher(None, tgt_norm, src_norm).ratio()
+                    if score > best_score:
+                        best_score = score
+                        best = src_norm
+
+                mapping[tgt] = src_norm_map[best] if best_score >= 0.65 else None
 
             # Preview dialog
             dlg = MappingPreviewDialog(mapping, df.columns, required_targets=REQUIRED_MAPPING_TARGETS, parent=self)
