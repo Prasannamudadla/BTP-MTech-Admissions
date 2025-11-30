@@ -746,6 +746,7 @@ class SeatMatrixTab(QWidget):
                         table.item(r, 1).setText(str(seats_allocated))
                         table.item(r, 2).setText(str(seats_booked))
                         table.blockSignals(False)
+        self.update_all_section_labels()
 
     def save_matrix(self):
         """Save data back to the database."""
