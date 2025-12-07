@@ -1,27 +1,3 @@
-# import sqlite3
-# DB_NAME = "mtech_offers.db"
-
-# def get_connection():
-#     return sqlite3.connect(DB_NAME)
-
-# def fetch_all_candidates():
-#     conn = get_connection()
-#     cursor = conn.cursor()
-#     cursor.execute("SELECT * FROM candidates")
-#     rows = cursor.fetchall()
-#     conn.close()
-#     return rows
-
-# def insert_candidate(data_dict):
-#     conn = get_connection()
-#     cursor = conn.cursor()
-#     columns = ', '.join(data_dict.keys())
-#     placeholders = ', '.join(['?'] * len(data_dict))
-#     cursor.execute(f'INSERT OR IGNORE INTO candidates ({columns}) VALUES ({placeholders})',
-#                    tuple(data_dict.values()))
-#     conn.commit()
-#     conn.close()
-
 import sqlite3
 import os
 import datetime
@@ -40,7 +16,7 @@ def generate_gate_year_columns():
     - previous year
     - previous previous year
     """
-    current_year = datetime.datetime.now().year % 100  # Convert 2026 → 26
+    current_year = datetime.datetime.now().year % 100  
     years = [current_year, current_year - 1, current_year - 2]
 
     columns = []
@@ -105,17 +81,26 @@ def init_db():
         GATE_Roll_num TEXT
     )
     """)
+    # ---- Add branch column (if not exists) ----
+    try:
+        cur.execute("ALTER TABLE candidates ADD COLUMN branch TEXT")
+    except:
+        pass
+    
+    # Auto-fill branch based on App_no prefix
+    cur.execute("UPDATE candidates SET branch = substr(App_no, 1, 2) WHERE branch IS NULL OR branch = ''")
 
     # ---- Seat matrix ----
     cur.execute("""
     CREATE TABLE IF NOT EXISTS seat_matrix (
-        category TEXT PRIMARY KEY,
+        category TEXT,
+        branch TEXT,
         set_seats INTEGER DEFAULT 0,
         seats_allocated INTEGER DEFAULT 0,
-        seats_booked INTEGER DEFAULT 0
+        seats_booked INTEGER DEFAULT 0,
+        PRIMARY KEY (category, branch)
     )
     """)
-
     conn.commit()
     conn.close()
     

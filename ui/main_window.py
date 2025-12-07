@@ -1,3 +1,21 @@
+# main_window.py
+import sqlite3
+from PySide6.QtCore import Qt,Signal
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow,QDialog, QWidget, QVBoxLayout, QMessageBox, 
+    QTabWidget, QPushButton, QFileDialog, QLabel, QComboBox, QTableWidget, 
+    QTableWidgetItem, QScrollArea, QGroupBox, QToolBox, QHBoxLayout,QToolButton,QSizePolicy
+)
+import re, difflib, json
+import numpy as np
+from ui.update_dialog import UpdateDialog
+from ui.rounds_manager import run_round, download_offers, upload_round_decisions 
+import pandas as pd
+import re
+from database import db_manager 
+from ui.round_upload_widget import RoundUploadWidget
+from ui.search_page import SearchPage
+from ui.seat_matrix_upload import SeatMatrixUpload
 import datetime
 
 def dynamic_required_gate_cols():
@@ -28,26 +46,6 @@ REQUIRED_MAPPING_TARGETS = [
     "Degree_Per_8th",
     "Degree_CGPA_8th"
 ]
-
-# main_window.py
-import sqlite3
-from PySide6.QtCore import Qt,Signal
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow,QDialog, QWidget, QVBoxLayout, QMessageBox, 
-    QTabWidget, QPushButton, QFileDialog, QLabel, QComboBox, QTableWidget, 
-    QTableWidgetItem, QScrollArea, QGroupBox, QToolBox, QHBoxLayout,QToolButton,QSizePolicy
-)
-import re, difflib, json
-import numpy as np
-from ui.update_dialog import UpdateDialog
-# IMPORTANT CHANGE: Import the generic multi-round functions
-from ui.rounds_manager import run_round, download_offers, upload_round_decisions 
-import pandas as pd
-import re
-from database import db_manager 
-from ui.round_upload_widget import RoundUploadWidget
-from ui.search_page import SearchPage
-from ui.seat_matrix_upload import SeatMatrixUpload
 
 DB_NAME = "mtech_offers.db"
 def _coerce_df_for_sql(df: pd.DataFrame) -> pd.DataFrame:
@@ -80,7 +78,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("MTech Offers Automation")
         self.resize(900, 600)
-        self.total_rounds = 10 
+        self.total_rounds = 11
         
         # Create tab widget
         self.tabs = QTabWidget()
@@ -124,8 +122,6 @@ class MainWindow(QMainWindow):
         # --- Final step ---
         # Call a new method to check DB state and update UI labels/buttons
         self.update_init_tab_state()
-    # main_window.py (Inside MainWindow class)
-    # main_window.py (Inside MainWindow class)
 
     def reset_all_data(self):
         """Handles the full deletion and re-initialization of the database."""
@@ -200,23 +196,7 @@ class MainWindow(QMainWindow):
             self.status_label.setStyleSheet("color: green; font-weight: bold;")
             
         self.status_label.setText(status_text)
-        # if candidates_count > 0:
-        #     self.upload_btn.setText("Upload/Update Applicants Excel (Will INSERT OR IGNORE)")
-            
-        #     # # The label should now reflect the persistent state, not just the last upload
-        #     # status_text = f"<font color='green'>Database Initialized!</font> Candidates: **{candidates_count}**. "
-        #     # if matrix_count > 0:
-        #     #      status_text += f"Seat Matrix Categories: **{matrix_count}**."
-        #     # else:
-        #     #      status_text += "Seat Matrix is **Empty**."
-        #     # self.status_label.setText(status_text)
-            
-        # else:
-        #     self.upload_btn.setText("Upload Applicants Excel")
-        #     self.status_label.setText("<font color='red'>Database is Empty or Uninitialized. Please upload Applicants Excel.</font>")
-            
-        # # The Reset button should always be available if the file exists
-        # self.reset_db_btn.setEnabled(True)      
+             
     def open_update_page(self, record: dict):
     # lazy import to avoid circulars
         coap = record.get("coap_id")
@@ -300,51 +280,15 @@ class MainWindow(QMainWindow):
                     continue
 
                 # Fuzzy
-                def extract_year(s):
-                    nums = re.findall(r'\d+', s)
-                    return nums[0] if nums else None
-
-                def token_sim(a, b):
-                    a_tokens = re.findall(r'[A-Za-z]+', a.lower())
-                    b_tokens = re.findall(r'[A-Za-z]+', b.lower())
-                    return len(set(a_tokens) & set(b_tokens))
-
-                req_year = extract_year(tgt_norm)
-
                 best = None
-                best_score = -1
-
+                best_score = 0
                 for src_norm in src_norm_list:
-                    col_year = extract_year(src_norm)
-
-                    # Rule 1: year must match (23→23, 24→24)
-                    if req_year and col_year and req_year != col_year:
-                        continue
-
-                    score = token_sim(tgt_norm, src_norm)
-
-                    # Rule 2: extra weight for correct type (score/rank/roll)
-                    if "score" in tgt_norm and "score" in src_norm:
-                        score += 2
-                    if "rank" in tgt_norm and "rank" in src_norm:
-                        score += 2
-                    if "roll" in tgt_norm and "roll" in src_norm:
-                        score += 2
-
+                    score = difflib.SequenceMatcher(None, tgt_norm, src_norm).ratio()
                     if score > best_score:
                         best_score = score
                         best = src_norm
 
-                mapping[tgt] = src_norm_map[best] if best_score > 0 else None
-                # best = None
-                # best_score = 0
-                # for src_norm in src_norm_list:
-                #     score = difflib.SequenceMatcher(None, tgt_norm, src_norm).ratio()
-                #     if score > best_score:
-                #         best_score = score
-                #         best = src_norm
-
-                # mapping[tgt] = src_norm_map[best] if best_score >= 0.65 else None
+                mapping[tgt] = src_norm_map[best] if best_score >= 0.65 else None
 
             # Preview dialog
             dlg = MappingPreviewDialog(mapping, df.columns, required_targets=REQUIRED_MAPPING_TARGETS, parent=self)
@@ -442,7 +386,7 @@ class SeatMatrixTab(QWidget):
         self.save_btn = QPushButton("Save Seat Matrix")
         self.save_btn.clicked.connect(self.save_matrix)
         btn_layout.addWidget(self.save_btn)
-        manual_layout.addLayout(btn_layout)
+        layout.addLayout(btn_layout)
 
         self.is_rounds_started = False
         # Load initial state from DB
@@ -556,29 +500,6 @@ class SeatMatrixTab(QWidget):
         # update header labels based on initial values (zeroes)
         self.update_all_section_labels()
         
-
-    # def create_sections(self):
-    #     """Create collapsible sections (QToolBox) for each main category."""
-    #     for section, subcats in self.categories.items():
-    #         table = QTableWidget()
-    #         table.setRowCount(len(subcats))
-    #         table.setColumnCount(3)
-    #         table.setHorizontalHeaderLabels(["Set Seats", "Seats Allocated", "Seats Booked"])
-
-    #         for i, sub in enumerate(subcats):
-    #             header_item = QTableWidgetItem(sub)
-    #             header_item.setFlags(header_item.flags() & ~Qt.ItemIsEditable)
-    #             table.setVerticalHeaderItem(i, header_item)
-
-    #             for j in range(3):
-    #                 val = QTableWidgetItem("0")
-    #                 if j != 0:
-    #                     val.setFlags(val.flags() & ~Qt.ItemIsEditable)
-    #                 table.setItem(i, j, val)
-
-    #         self.toolbox.addItem(table, section)
-    #         self.tables[section] = table
-    
     def _on_header_toggled(self, section: str, checked: bool):
         """
         When a header is toggled:
@@ -649,10 +570,6 @@ class SeatMatrixTab(QWidget):
         if len(summary) > MAX_LEN:
             summary = summary[:MAX_LEN - 3] + "..."
 
-        # idx = self.toolbox.indexOf(table)
-        # if idx != -1:
-        #     self.toolbox.setItemText(idx, summary)
-        # Set header button text (accordion)
         btn = self.header_buttons.get(section)
         if btn:
             btn.setText(summary)
@@ -746,6 +663,8 @@ class SeatMatrixTab(QWidget):
                         table.item(r, 1).setText(str(seats_allocated))
                         table.item(r, 2).setText(str(seats_booked))
                         table.blockSignals(False)
+        self.update_all_section_labels()
+        
 
     def save_matrix(self):
         """Save data back to the database."""
@@ -754,9 +673,20 @@ class SeatMatrixTab(QWidget):
         for section, table in self.tables.items():
             for r in range(table.rowCount()):
                 category = table.verticalHeaderItem(r).text()
-                set_seats = int(table.item(r, 0).text())
-                seats_allocated = int(table.item(r, 1).text())
-                seats_booked = int(table.item(r, 2).text())
+                # defensive: ensure numeric parse
+                try:
+                    set_seats = int(table.item(r, 0).text())
+                except Exception:
+                    set_seats = 0
+                try:
+                    seats_allocated = int(table.item(r, 1).text())
+                except Exception:
+                    seats_allocated = 0
+                try:
+                    seats_booked = int(table.item(r, 2).text())
+                except Exception:
+                    seats_booked = 0
+
                 cursor.execute("""
                     INSERT OR REPLACE INTO seat_matrix (category, set_seats, seats_allocated, seats_booked)
                     VALUES (?, ?, ?, ?)
@@ -772,14 +702,11 @@ class SeatMatrixTab(QWidget):
             
 class RoundsWidget(QWidget):
     roundsRefreshed = Signal()
-    def __init__(self, total_rounds=10):
+    def __init__(self, total_rounds=11):
         super().__init__()
         self.total_rounds = total_rounds
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
-        
-        # from PySide6.QtCore import Signal
-        # self.roundsRefreshed = Signal()
 
         # ------------------ Round Selection ------------------
         round_layout = QHBoxLayout()
@@ -802,16 +729,7 @@ class RoundsWidget(QWidget):
         self.download_btn = QPushButton("Download Offers")
         self.download_btn.clicked.connect(self.download_current_round_offers)
         btn_layout.addWidget(self.download_btn)
-
-        # self.reset_btn = QPushButton("Reset Uploaded Files")
-        # self.reset_btn.clicked.connect(self.reset_round)
-        # btn_layout.addWidget(self.reset_btn)
-         # Original button (for clearing file paths before generation)
-        # self.reset_uploads_btn = QPushButton("Reset Uploaded Files") # RENAMED
-        # self.reset_uploads_btn.clicked.connect(self.reset_uploads)    # NEW method name
-        # btn_layout.addWidget(self.reset_uploads_btn)
-
-        # NEW Button (for deleting GENERATED offers for completed rounds)
+        
         self.delete_round_btn = QPushButton("Reset Data") # NEW BUTTON
         self.delete_round_btn.clicked.connect(self.delete_round_data) # NEW method
         btn_layout.addWidget(self.delete_round_btn)
@@ -830,10 +748,7 @@ class RoundsWidget(QWidget):
         if self.round_combo.count() == 0:
             return 1
         return int(self.round_combo.currentText())
-    def get_file_path(self):
-        if self.upload_widget:
-            return self.upload_widget.file_path
-        return None
+
     def refresh_rounds(self):
         self.round_combo.clear()
         conn = sqlite3.connect(DB_NAME)
@@ -871,24 +786,6 @@ class RoundsWidget(QWidget):
             self.upload_widget.other_widget.reset_widget()
             self.upload_widget.cons_widget.reset_widget()
 
-        # if round_no == 1 and not is_current_round_run:
-        #     # Round 1 requires NO upload
-        #     self.upload_widget.setVisible(False)
-        #     self.generate_btn.setEnabled(True)
-        #     self.reset_btn.setVisible(False)
-
-        # elif is_current_round_run:
-        #     # Past round already generated
-        #     self.upload_widget.setVisible(False)
-        #     self.generate_btn.setEnabled(False)
-        #     self.reset_btn.setVisible(False)
-
-        # else:
-        #     # Round > 1 → show upload section
-        #     self.upload_widget.setVisible(True)
-        #     self.generate_btn.setEnabled(True)
-        #     self.reset_btn.setVisible(True)
-        
         if round_no == 1 and not is_current_round_run:
         # Round 1 (Ungenerated)
             self.upload_widget.setVisible(False)
@@ -1017,34 +914,3 @@ class RoundsWidget(QWidget):
         # The current round is now the new MAX + 1, so the UI should switch to the upload view for the next round
         self.update_ui_visibility()
         
-    # def reset_round(self):
-    #     round_no = self.get_current_round()
-    #     if round_no == 1:
-    #         QMessageBox.warning(self, "Warning",
-    #                             "Round 1 does not have decision uploads.")
-    #         return
-
-    #     prev_round = round_no - 1
-
-    #     # Drop tables created when decisions were uploaded
-    #     conn = sqlite3.connect(DB_NAME)
-    #     cursor = conn.cursor()
-
-    #     try:
-    #         cursor.execute(f"DROP TABLE IF EXISTS iit_goa_offers_round{prev_round}")
-    #         cursor.execute(f"DROP TABLE IF EXISTS accepted_other_institute_round{prev_round}")
-    #         cursor.execute(f"DROP TABLE IF EXISTS consolidated_decisions_round{prev_round}")
-    #         conn.commit()
-    #     finally:
-    #         conn.close()
-
-    #     # Reset UI
-    #     self.upload_widget.goa_widget.reset_widget()
-    #     self.upload_widget.other_widget.reset_widget()
-    #     self.upload_widget.cons_widget.reset_widget()
-
-    #     QMessageBox.information(
-    #         self,
-    #         "Reset Complete",
-    #         f"Decision uploads for Round {prev_round} have been cleared!"
-    #     )

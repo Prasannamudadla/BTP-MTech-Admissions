@@ -127,7 +127,7 @@ class SearchPage(QWidget):
         self._set_empty(False)
         self.table.setRowCount(1)
         item = QTableWidgetItem(message)
-        item.setForeground(QBrush(QColor('red'))) # Changed error color to red for clarity
+        item.setForeground(QBrush(QColor('red')))
         self.table.setSpan(0, 0, 1, self.table.columnCount())
         self.table.setItem(0, 0, item)
 
