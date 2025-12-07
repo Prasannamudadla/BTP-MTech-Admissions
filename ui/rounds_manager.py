@@ -532,6 +532,13 @@ def run_round(round_no):
 
     finally:
         conn.close()
+# second
+# ------------------------------------------------------
+# MAIN ROUND ALLOCATION (FIXED LOGIC)
+# ------------------------------------------------------
+# def run_round(round_no):
+#     conn = sqlite3.connect(DB_NAME)
+#     cursor = conn.cursor()
 
 def _safe_sql_df(conn, sql):
     """Run SQL and return DataFrame; re-raise exceptions to be handled by caller."""

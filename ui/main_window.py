@@ -707,6 +707,9 @@ class RoundsWidget(QWidget):
         self.total_rounds = total_rounds
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
+        
+        # from PySide6.QtCore import Signal
+        # self.roundsRefreshed = Signal()
 
         # ------------------ Round Selection ------------------
         round_layout = QHBoxLayout()
